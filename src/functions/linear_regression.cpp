@@ -28,13 +28,6 @@ float linearRegression1D(std::vector<int> features, std::vector<int> labels, flo
         // Update theta 
         theta = theta - alpha * gradient;
     }
-
-    // Predictions 
-    std::cout << "Predictions: ";
-    for (auto feature : features) {
-        std::cout << feature * theta << ", ";
-    }
-
     return theta;
 };
 
@@ -75,6 +68,7 @@ void matrixAdd(std::vector<std::vector<float>> &matrix1, std::vector<std::vector
 };
 
 void printMatrix(std::vector<std::vector<float>> &matrix) {
+    // Debugging tool
     for (auto row : matrix) {
         for (auto element : row) {
             std::cout << element << ", ";
@@ -108,7 +102,7 @@ std::vector<std::vector<float>> getGradientND(std::vector<std::vector<float>> &s
     return result;
 };
 
-void linearRegressionND(std::vector<std::vector<float>> &features, std::vector<std::vector<float>> &labels, float alpha, float lambda, size_t iter) {
+std::vector<std::vector<float>> linearRegressionND(std::vector<std::vector<float>> &features, std::vector<std::vector<float>> &labels, float alpha, float lambda, size_t iter) {
     size_t n = features.size();
     size_t d = features[0].size();
 
@@ -130,36 +124,56 @@ void linearRegressionND(std::vector<std::vector<float>> &features, std::vector<s
         matrixSubtract(theta, gradient, theta);
     }
 
-    std::cout << "Predictions: ";
-    for (auto feature : features) {
-        float prediction = 0;
-        for (size_t i=0; i<d; i++) {
-            prediction += feature[i] * theta[i][0];
-        }
-        std::cout << prediction << ", ";
-    }
-
-    std::cout << "\nWeights: ";
-    for (size_t i=0; i<d; i++) {
-        std::cout << theta[i][0] << ", ";
-    }
+    return theta;
 }
 
-int main() {
-    std::vector<std::vector<float>> features = {
-        {2, 5},
-        {3, 1},
-        {-1, 4}
-    };
-    float theta1 = -2.486;
-    float theta2 = 0.477;
-    std::vector<std::vector<float>> labels = {
-        {theta1 * features[0][0] + theta2 * features[0][1]},
-        {theta1 * features[1][0] + theta2 * features[1][1]},
-        {theta1 * features[2][0] + theta2 * features[2][1]}
-    };
 
-    float alpha = 0.01;
-    float lambda = 0.0;
-    linearRegressionND(features, labels, alpha, lambda, 1000);
-};
+int main() {
+    // Test case 1: 1D linear regression
+    std::vector<int> features1D = {1, 2, 3, 4, 5};
+    std::vector<int> labels1D = {-3, -6, -9, -12, -15};
+    float alpha1D = 0.01;
+    float lambda1D = 0.0;
+    size_t iter1D = 100;
+    auto result1D = linearRegression1D(features1D, labels1D, alpha1D, lambda1D, iter1D);
+    std::cout << "Test case 1:\n" << result1D << "\n\n";
+
+    // Test case 2: 2D linear regression
+    std::vector<std::vector<float>> features2D = {
+        {-1, 3}, 
+        {2, -4}, 
+        {5, -2}, 
+        {3, -1}
+    };
+    std::vector<std::vector<float>> labels2D = {
+        {-9.5},
+        {15},
+        {21.5},
+        {12.5}
+    };
+    float alpha2D = 0.01;
+    float lambda2D = 0.0;
+    size_t iter2D = 100;
+    auto result2D = linearRegressionND(features2D, labels2D, alpha2D, lambda2D, iter2D);
+    std::cout << "Test case 2:" << std::endl;
+    printMatrix(result2D);
+    std::cout << "\n";
+
+    // Test case 3: regularised 
+    std::vector<std::vector<float>> features3D = {
+        {1, 3, 5}, 
+        {2, 4, 6}, 
+    };
+    std::vector<std::vector<float>> labels3D = {
+        {311},
+        {414}
+    };
+    float alpha3D = 0.01;
+    float lambda3D = 0.4;
+    size_t iter3D = 100;
+    auto result3D = linearRegressionND(features3D, labels3D, alpha3D, lambda3D, iter3D);
+    std::cout << "Test case 3:" << std::endl;
+    printMatrix(result3D);
+
+    return 0;
+}

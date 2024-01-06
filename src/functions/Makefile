@@ -1,4 +1,4 @@
-# Makefile for Linear Regression Testing code
+# Makefile for Linear Regression code
 
 # Compiler
 CXX = g++
