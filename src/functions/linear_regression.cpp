@@ -127,7 +127,6 @@ std::vector<std::vector<float>> linearRegressionND(std::vector<std::vector<float
     return theta;
 }
 
-
 int main() {
     // Test case 1: 1D linear regression
     std::vector<int> features1D = {1, 2, 3, 4, 5};
