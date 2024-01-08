@@ -9,6 +9,7 @@
 #include <duckdb/parser/parsed_data/create_scalar_function_info.hpp>
 
 #include "functions/sum.cpp" // This is bad, need header files
+#include "functions/sum_count.cpp" 
 
 // OpenSSL linked through vcpkg
 #include <openssl/opensslv.h>
@@ -19,7 +20,10 @@ void QuackExtension::Load(DuckDB &db) {
 	Connection con(db);
     con.BeginTransaction();
     auto &catalog = Catalog::GetSystemCatalog(*con.context);
+
     ml::RegisterSumFunction(con, catalog);
+    ml::RegisterSumCountFunction(con, catalog);
+
     con.Commit();
 }
 std::string QuackExtension::Name() {
