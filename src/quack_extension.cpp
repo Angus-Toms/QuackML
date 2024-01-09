@@ -21,7 +21,6 @@ void QuackExtension::Load(DuckDB &db) {
     con.BeginTransaction();
     auto &catalog = Catalog::GetSystemCatalog(*con.context);
 
-    ml::RegisterSumFunction(con, catalog);
     ml::RegisterSumCountFunction(con, catalog);
 
     con.Commit();
