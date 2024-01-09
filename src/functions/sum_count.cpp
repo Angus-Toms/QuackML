@@ -1,5 +1,3 @@
-// UDAF to find sum and count in single function
-
 #include "duckdb/function/function_set.hpp"
 #include "duckdb/parser/parsed_data/create_aggregate_function_info.hpp"
 
@@ -31,7 +29,7 @@ struct SumCountOperation {
         if (!target.result) {
             target.result = new map<string, double>();
         }
-        
+
         (*target.result)["sum"] += (*source.result).at("sum");
         (*target.result)["count"] += (*source.result).at("count");
     }
