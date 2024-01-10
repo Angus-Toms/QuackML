@@ -9,7 +9,6 @@
 #include <duckdb/parser/parsed_data/create_scalar_function_info.hpp>
 
 #include "functions/sum.cpp" // This is bad, need header files
-#include "functions/sum_count_2.cpp"
 
 // OpenSSL linked through vcpkg
 #include <openssl/opensslv.h>
