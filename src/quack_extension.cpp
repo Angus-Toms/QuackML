@@ -8,7 +8,8 @@
 #include "duckdb/main/extension_util.hpp"
 #include <duckdb/parser/parsed_data/create_scalar_function_info.hpp>
 
-#include "functions/sum.cpp" // This is bad, need header files
+#include "functions/sum.hpp"
+#include "functions/sum_count.hpp"
 
 // OpenSSL linked through vcpkg
 #include <openssl/opensslv.h>
@@ -20,12 +21,13 @@ void QuackExtension::Load(DuckDB &db) {
     con.BeginTransaction();
     auto &catalog = Catalog::GetSystemCatalog(*con.context);
 
-    ml::RegisterSumCountFunction(con, catalog);
+    quackml::Sum::RegisterFunction(con, catalog);
+    quackml::SumCount::RegisterFunction(con, catalog);
 
     con.Commit();
 }
 std::string QuackExtension::Name() {
-	return "quack";
+	return "QuackML";
 }
 
 } // namespace duckdb

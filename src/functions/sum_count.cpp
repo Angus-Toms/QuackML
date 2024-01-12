@@ -1,24 +1,8 @@
-// Sum count UDAF implementation built with different constructor
+// UDAF to compute sum and count of a relation
 
-#include "duckdb/function/function_set.hpp"
-#include "duckdb/parser/parsed_data/create_aggregate_function_info.hpp"
-#include "duckdb/function/scalar/nested_functions.hpp"
-#include "duckdb/core_functions/aggregate/nested_functions.hpp"
-#include "duckdb/planner/expression/bound_aggregate_expression.hpp"
-#include "duckdb/common/pair.hpp"
-#include "duckdb/planner/expression/bound_function_expression.hpp"
-#include "duckdb/common/types/vector.hpp"
+#include "functions/sum_count.hpp"
 
-#include <map>
-
-using namespace duckdb;
-
-namespace ml {
-
-struct SumCountState {
-    double sum;
-    double count;
-};
+namespace quackml {
 
 struct SumCountFunction {
     template <class STATE>
@@ -28,7 +12,7 @@ struct SumCountFunction {
     }
 
     template <class STATE>
-    static void Destroy(STATE &state, AggregateInputData &aggr_input_data) {
+    static void Destroy(STATE &state, duckdb::AggregateInputData &aggr_input_data) {
         return;
     }
 
@@ -37,11 +21,11 @@ struct SumCountFunction {
     }
 };
 
-static void SumCountUpdate(Vector inputs[], AggregateInputData &, idx_t input_count, Vector &state_vector, idx_t count) {
+static void SumCountUpdate(duckdb::Vector inputs[], duckdb::AggregateInputData &, idx_t input_count, duckdb::Vector &state_vector, idx_t count) {
     auto &input = inputs[0];
-    UnifiedVectorFormat sdata;
+    duckdb::UnifiedVectorFormat sdata;
 	state_vector.ToUnifiedFormat(count, sdata);
-	UnifiedVectorFormat input_data;
+	duckdb::UnifiedVectorFormat input_data;
 	input.ToUnifiedFormat(count, input_data);
 
     auto states = (SumCountState **)sdata.data;
@@ -49,18 +33,18 @@ static void SumCountUpdate(Vector inputs[], AggregateInputData &, idx_t input_co
         if (input_data.validity.RowIsValid(input_data.sel->get_index(i))) {
             auto &state = *states[sdata.sel->get_index(i)];
             // Cast input to double
-            auto value = UnifiedVectorFormat::GetData<double>(input_data);
+            auto value = duckdb::UnifiedVectorFormat::GetData<double>(input_data);
             state.sum += value[input_data.sel->get_index(i)];
             state.count++;
         }
     }
 }
 
-static void SumCountCombine(Vector &state_vector, Vector &combined, AggregateInputData &, idx_t count) {
-    UnifiedVectorFormat sdata;
+static void SumCountCombine(duckdb::Vector &state_vector, duckdb::Vector &combined, duckdb::AggregateInputData &, idx_t count) {
+    duckdb::UnifiedVectorFormat sdata;
     state_vector.ToUnifiedFormat(count, sdata);
     auto states_ptr = (SumCountState **)sdata.data;
-    auto combined_ptr = FlatVector::GetData<SumCountState *>(combined);
+    auto combined_ptr = duckdb::FlatVector::GetData<SumCountState *>(combined);
 
     for (idx_t i = 0; i < count; i++) {
         auto &state = *states_ptr[sdata.sel->get_index(i)];
@@ -69,61 +53,61 @@ static void SumCountCombine(Vector &state_vector, Vector &combined, AggregateInp
     }
 }
 
-static void SumCountFinalize(Vector &state_vector, AggregateInputData &, Vector &result, idx_t count, idx_t offset) {
-    UnifiedVectorFormat sdata;
+static void SumCountFinalize(duckdb::Vector &state_vector, duckdb::AggregateInputData &, duckdb::Vector &result, idx_t count, idx_t offset) {
+    duckdb::UnifiedVectorFormat sdata;
     state_vector.ToUnifiedFormat(count, sdata);
     auto states = (SumCountState **)sdata.data;
-    auto &mask = FlatVector::Validity(result);
-    auto old_len = ListVector::GetListSize(result);
+    auto &mask = duckdb::FlatVector::Validity(result);
+    auto old_len = duckdb::ListVector::GetListSize(result);
 
     for (idx_t i = 0; i < count; i++) {
         const auto rid = i + offset;
         auto &state = *states[sdata.sel->get_index(i)];
 
-        Value sum_value = Value::CreateValue(state.sum);
-        Value count_value = Value::CreateValue(state.count);
-        auto sum_pair = Value::STRUCT({std::make_pair("key", "sum"), std::make_pair("value", sum_value)});
-        auto count_pair = Value::STRUCT({std::make_pair("key", "count"), std::make_pair("value", count_value)});
-        ListVector::PushBack(result, sum_pair);
-        ListVector::PushBack(result, count_pair);
+        duckdb::Value sum_value = duckdb::Value::CreateValue(state.sum);
+        duckdb::Value count_value = duckdb::Value::CreateValue(state.count);
+        auto sum_pair = duckdb::Value::STRUCT({std::make_pair("key", "sum"), std::make_pair("value", sum_value)});
+        auto count_pair = duckdb::Value::STRUCT({std::make_pair("key", "count"), std::make_pair("value", count_value)});
+        duckdb::ListVector::PushBack(result, sum_pair);
+        duckdb::ListVector::PushBack(result, count_pair);
 
-        auto list_struct_data = ListVector::GetData(result);
-        list_struct_data[rid].length = ListVector::GetListSize(result) - old_len;
+        auto list_struct_data = duckdb::ListVector::GetData(result);
+        list_struct_data[rid].length = duckdb::ListVector::GetListSize(result) - old_len;
         list_struct_data[rid].offset = old_len;
         old_len += list_struct_data[rid].length;
     }
     result.Verify(count);
 }
 
-unique_ptr<FunctionData> SumCountBind(ClientContext &context, AggregateFunction &function, vector<unique_ptr<Expression>> &arguments) {
-    auto struct_type = LogicalType::MAP(LogicalType::VARCHAR, LogicalType::DOUBLE);
+duckdb::unique_ptr<duckdb::FunctionData> SumCountBind(duckdb::ClientContext &context, duckdb::AggregateFunction &function, duckdb::vector<duckdb::unique_ptr<duckdb::Expression>> &arguments) {
+    auto struct_type = duckdb::LogicalType::MAP(duckdb::LogicalType::VARCHAR, duckdb::LogicalType::DOUBLE);
     function.return_type = struct_type;
-    return make_uniq<VariableReturnBindData>(function.return_type);
+    return duckdb::make_uniq<duckdb::VariableReturnBindData>(function.return_type);
 }
 
-AggregateFunction GetSumCountFunction() {
+duckdb::AggregateFunction GetSumCountFunction() {
     using STATE_TYPE = SumCountState;
 
-    return AggregateFunction(
+    return duckdb::AggregateFunction(
         "sum_count",                                                                // name
-        {LogicalType::DOUBLE},                                                      // argument types
-        LogicalTypeId::MAP,                                                         // return type
-        AggregateFunction::StateSize<STATE_TYPE>,                                   // state size
-        AggregateFunction::StateInitialize<STATE_TYPE, SumCountFunction>,           // initialize
+        {duckdb::LogicalType::DOUBLE},                                              // argument types
+        duckdb::LogicalTypeId::MAP,                                                 // return type
+        duckdb::AggregateFunction::StateSize<STATE_TYPE>,                           // state size
+        duckdb::AggregateFunction::StateInitialize<STATE_TYPE, SumCountFunction>,   // initialize
         SumCountUpdate,                                                             // update
         SumCountCombine,                                                            // combine
         SumCountFinalize,                                                           // finalize
         nullptr,                                                                    // simple update 
         SumCountBind,                                                               // bind
-        AggregateFunction::StateDestroy<STATE_TYPE, SumCountFunction>               // destroy
+        duckdb::AggregateFunction::StateDestroy<STATE_TYPE, SumCountFunction>       // destroy
     );
 }
 
-void RegisterSumCountFunction(Connection &conn, Catalog &catalog) {
-    AggregateFunctionSet sum_count("sum_count");
+void SumCount::RegisterFunction(duckdb::Connection &conn, duckdb::Catalog &catalog) {
+    duckdb::AggregateFunctionSet sum_count("sum_count");
     sum_count.AddFunction(GetSumCountFunction());
-    CreateAggregateFunctionInfo info(sum_count);
+    duckdb::CreateAggregateFunctionInfo info(sum_count);
     catalog.CreateFunction(*conn.context, info);
 }
 
-} // namespace duckdb
+} // namespace quackml

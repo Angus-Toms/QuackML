@@ -1,14 +1,9 @@
 // Redefinition of sum aggregate function
 // Just to get the hang of UDAFs
 
-#include "duckdb/function/function_set.hpp"
-#include "duckdb/parser/parsed_data/create_aggregate_function_info.hpp"
+#include "functions/sum.hpp"
 
-namespace ml {
-
-struct SumState {
-    double sum;
-};
+namespace quackml {
 
 struct SumOperation {
     template <class STATE>
@@ -48,11 +43,11 @@ duckdb::AggregateFunction GetSumFunction() {
         duckdb::LogicalType::DOUBLE, duckdb::LogicalType::DOUBLE);
 }
 
-void RegisterSumFunction(duckdb::Connection &conn, duckdb::Catalog &catalog) {
+void Sum::RegisterFunction(duckdb::Connection &conn, duckdb::Catalog &catalog) {
     duckdb::AggregateFunctionSet my_sum("my_sum");
     my_sum.AddFunction(GetSumFunction());
     duckdb::CreateAggregateFunctionInfo my_sum_info(my_sum);
     catalog.CreateFunction(*conn.context, my_sum_info);
 }
 
-} // namespace ml
+} // namespace quackml
