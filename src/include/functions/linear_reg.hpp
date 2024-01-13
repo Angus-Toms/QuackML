@@ -17,15 +17,6 @@
 
 namespace quackml {
 
-struct LinearRegState {
-    // Weights
-    float theta;
-    float Sigma;
-    float C;
-};
-
-struct LinearRegressionFunction;
-
 struct LinearRegression {
     static void RegisterFunction(duckdb::Connection &conn, duckdb::Catalog &catalog);
 };

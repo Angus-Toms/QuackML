@@ -1,113 +1,75 @@
 // UDAF to perform 1D regularised linear regression 
-// Arguments to UDAF: one feature relation, one label relation, learning rate (alpha), regularisation parameter (lambda), number of iterations (iter)
+// Build with new constructor
 
 #include "functions/linear_reg.hpp"
 
-// Testing 
+// Testing:
 #include <iostream>
 using std::cout;
 using std::endl;
 
 namespace quackml {
 
+float getGradient(idx_t n, float Sigma, float C, float theta) {
+    float lambda = 0.0; // Set regularisation to 0 for now
+    return (1.0 / n) * ((Sigma * theta - C) + (lambda * theta));
+}
+
+struct LinearRegState {
+    idx_t count;
+    double theta;
+    double Sigma;
+    double C;
+};
+
 struct LinearRegFunction {
-    // TODO: Are templates needed?
     template <class STATE>
     static void Initialize(STATE &state) {
+        state.count = 0;
         state.theta = 1.0;
         state.Sigma = 0.0;
         state.C = 0.0;
     }
 
-    template <class STATE>
-    static void Destroy(STATE &state, duckdb::AggregateInputData &aggr_input_data) {
-        return;
+    template <class A_TYPE, class B_TYPE, class STATE, class OP>
+    static void Operation(STATE &state, const A_TYPE &feature, const B_TYPE &label, duckdb::AggregateBinaryInput &idata) {
+        state.count++;
+        state.Sigma += feature * feature;
+        state.C += feature * label;
     }
 
-    static bool IgnoreNull() { 
-        return true; 
+    template <class STATE, class OP>
+    static void Combine(const STATE &source, STATE &target, duckdb::AggregateInputData &data) {
+        target.count += source.count;
+        target.Sigma += source.Sigma;
+        target.C += source.C;
     }
+
+    static bool IgnoreNull() {
+        return true;
+    }
+
+    template <class T, class STATE>
+    static void Finalize(STATE &state, T &target, duckdb::AggregateFinalizeData &finalize_data) {
+        
+        if (state.count == 0) {
+            finalize_data.ReturnNull();
+        }
+        
+        // Gradient descent 
+        float alpha = 0.01;
+        for (idx_t i = 0; i < 1000; i++) {
+            auto gradient = getGradient(state.count, state.Sigma, state.C, state.theta);
+            state.theta -= alpha * gradient;
+        }
+        target = state.theta;
+    }
+
 };
 
-static void LinearRegUpdate(duckdb::Vector inputs[], duckdb::AggregateInputData &, idx_t input_count, duckdb::Vector &state_vector, idx_t count) {
-    duckdb::UnifiedVectorFormat sdata;
-    state_vector.ToUnifiedFormat(count, sdata);
-    auto states = (LinearRegState **)sdata.data;
-
-    auto &features = inputs[0];
-    duckdb::UnifiedVectorFormat feature_data;
-    features.ToUnifiedFormat(count, feature_data);
-
-    auto &labels = inputs[1];
-    duckdb::UnifiedVectorFormat label_data;
-    labels.ToUnifiedFormat(count, label_data);
-
-    for (idx_t i = 0; i < count; i++) {
-        if (feature_data.validity.RowIsValid(feature_data.sel->get_index(i)) && 
-            label_data.validity.RowIsValid(label_data.sel->get_index(i))) {
-                auto &state = *states[sdata.sel->get_index(i)];
-                // Get feature and labels
-                auto feature = duckdb::UnifiedVectorFormat::GetData<double>(feature_data)[feature_data.sel->get_index(i)];
-                auto label = duckdb::UnifiedVectorFormat::GetData<double>(label_data)[label_data.sel->get_index(i)];
-                state.Sigma += feature * feature;
-                state.C += feature * label;
-        }
-    }
-
-}
-
-static void LinearRegCombine(duckdb::Vector &state_vector, duckdb::Vector &combined, duckdb::AggregateInputData &, idx_t count) {
-    duckdb::UnifiedVectorFormat sdata;
-    state_vector.ToUnifiedFormat(count, sdata);
-    auto states_ptr = (LinearRegState **)sdata.data;
-    auto combined_ptr = duckdb::FlatVector::GetData<LinearRegState *>(combined);
-
-    for (idx_t i = 0; i < count; i++) {
-        auto &state = *states_ptr[sdata.sel->get_index(i)];
-        combined_ptr[i]->Sigma += state.Sigma;
-        combined_ptr[i]->C += state.C;
-    }
-}
-
-static void LinearRegFinalize(duckdb::Vector &state_vector, duckdb::AggregateInputData &, duckdb::Vector &result, idx_t count, idx_t offset) {
-    duckdb::UnifiedVectorFormat sdata;
-    state_vector.ToUnifiedFormat(count, sdata);
-    auto states = (LinearRegState **)sdata.data;
-    auto &mask = duckdb::FlatVector::Validity(result);
-    auto old_len = duckdb::ListVector::GetListSize(result);
-
-    for (idx_t i = 0; i < count; i++) {
-        const auto rid = i + offset;
-        auto &state = *states[sdata.sel->get_index(i)];
-
-        duckdb::Value Sigma = duckdb::Value::CreateValue(state.Sigma);
-        duckdb::Value C = duckdb::Value::CreateValue(state.C);
-        std::cout << "Sigma: " << Sigma.ToString() << "\n";
-        std::cout << "C: " << C.ToString() << "\n";
-    }
-}
-
-duckdb::unique_ptr<duckdb::FunctionData> LinearRegBind(duckdb::ClientContext &context, duckdb::AggregateFunction &function, duckdb::vector<duckdb::unique_ptr<duckdb::Expression>> &arguments) {
-    auto return_type = duckdb::LogicalType::DOUBLE;
-    function.return_type = return_type;
-    return duckdb::make_uniq<duckdb::VariableReturnBindData>(return_type);
-}
-
 duckdb::AggregateFunction GetLinearRegFunction() {
-    return duckdb::AggregateFunction(
-        "linear_regression",                                                            // name
-        {duckdb::LogicalType::DOUBLE},                                                  // argument types (unsure about this)
-        duckdb::LogicalType::DOUBLE,                                                    // return type
-        duckdb::AggregateFunction::StateSize<LinearRegState>,                           // state size
-        duckdb::AggregateFunction::StateInitialize<LinearRegState, LinearRegFunction>,  // state initialize
-        LinearRegUpdate,                                                                // update
-        LinearRegCombine,                                                               // combine
-        LinearRegFinalize,                                                              // finalize
-        nullptr,                                                                        // simple update
-        LinearRegBind,                                                                  // bind
-        duckdb::AggregateFunction::StateDestroy<LinearRegState, LinearRegFunction>      // destroy
-    );
-}
+    return duckdb::AggregateFunction::BinaryAggregate<LinearRegState, double, double, double, LinearRegFunction>(duckdb::LogicalType::DOUBLE, duckdb::LogicalType::DOUBLE, duckdb::LogicalType::DOUBLE);
+} 
 
 void LinearRegression::RegisterFunction(duckdb::Connection &conn, duckdb::Catalog &catalog) {
     duckdb::AggregateFunctionSet linear_reg("linear_regression");
@@ -116,4 +78,4 @@ void LinearRegression::RegisterFunction(duckdb::Connection &conn, duckdb::Catalo
     catalog.CreateFunction(*conn.context, info);
 }
 
-} // namespace quackml
+}// namespace quackml

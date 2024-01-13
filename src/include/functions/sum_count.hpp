@@ -19,7 +19,7 @@
 namespace quackml {
 
 struct SumCountState {
-    double sum;
+    idx_t sum;
     double count;
 };
 

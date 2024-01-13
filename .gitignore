@@ -7,3 +7,4 @@ testext
 test/python/__pycache__/
 .Rhistory
 /src/functions/linear_reg
+test_commands.sql

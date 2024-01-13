@@ -2,6 +2,8 @@
 
 #include "functions/sum_count.hpp"
 
+#include <map>
+
 namespace quackml {
 
 struct SumCountFunction {
