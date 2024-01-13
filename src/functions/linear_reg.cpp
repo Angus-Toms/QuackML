@@ -96,7 +96,7 @@ duckdb::unique_ptr<duckdb::FunctionData> LinearRegBind(duckdb::ClientContext &co
 duckdb::AggregateFunction GetLinearRegFunction() {
     return duckdb::AggregateFunction(
         "linear_regression",                                                            // name
-        {duckdb::LogicalType::DOUBLE},                     // argument types (unsure about this)
+        {duckdb::LogicalType::DOUBLE},                                                  // argument types (unsure about this)
         duckdb::LogicalType::DOUBLE,                                                    // return type
         duckdb::AggregateFunction::StateSize<LinearRegState>,                           // state size
         duckdb::AggregateFunction::StateInitialize<LinearRegState, LinearRegFunction>,  // state initialize
