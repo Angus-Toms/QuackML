@@ -130,14 +130,17 @@ static void LinearRegressionUpdate(duckdb::Vector inputs[], duckdb::AggregateInp
         if (feature_data.validity.RowIsValid(feature_data.sel->get_index(i)) && label_data.validity.RowIsValid(label_data.sel->get_index(i))) {
             auto &state = *states[sdata.sel->get_index(i)];
 
-            auto feature_value = duckdb::UnifiedVectorFormat::GetData<double>(feature_data)[feature_data.sel->get_index(i)];
+            auto feature_value = feature.GetValue(i);
+            auto feature_children = duckdb::ListValue::GetChildren(feature_value);
+            std::cout << "feature: " << feature_children[0] << "\n";
+            // TODO: Start here
             auto label_value = duckdb::UnifiedVectorFormat::GetData<double>(label_data)[label_data.sel->get_index(i)];
             state.alpha = duckdb::UnifiedVectorFormat::GetData<double>(alpha_data)[alpha_data.sel->get_index(i)];
             state.lambda = duckdb::UnifiedVectorFormat::GetData<double>(lambda_data)[lambda_data.sel->get_index(i)];
             state.iterations = duckdb::UnifiedVectorFormat::GetData<int>(iterations_data)[iterations_data.sel->get_index(i)];
 
-            state.Sigma += feature_value * feature_value;
-            state.C += feature_value * label_value;
+            //state.Sigma += feature_value * feature_value;
+            //state.C += feature_value * label_value;
             state.count++;
         }
     }
@@ -195,7 +198,7 @@ duckdb::unique_ptr<duckdb::FunctionData> LinearRegressionBind(duckdb::ClientCont
 duckdb::AggregateFunction GetLinearRegressionFunction() {
 
     auto arg_types = duckdb::vector<duckdb::LogicalType>{
-        duckdb::LogicalType::DOUBLE, // feature
+        duckdb::LogicalType::LIST(duckdb::LogicalType::DOUBLE), // features
         duckdb::LogicalType::DOUBLE, // label
         duckdb::LogicalType::DOUBLE, // alpha
         duckdb::LogicalType::DOUBLE, // lambda
@@ -205,7 +208,7 @@ duckdb::AggregateFunction GetLinearRegressionFunction() {
     return duckdb::AggregateFunction(
         "linear_regression",                                                     // name     
         arg_types,                                                               // argument types
-        duckdb::LogicalTypeId::MAP,                                             // return type
+        duckdb::LogicalTypeId::MAP,                                              // return type
         duckdb::AggregateFunction::StateSize<LinearRegressionState>,             // state size
         duckdb::AggregateFunction::StateInitialize<LinearRegressionState, LinearRegressionFunction>, // state initialize
         LinearRegressionUpdate,                                                  // update
