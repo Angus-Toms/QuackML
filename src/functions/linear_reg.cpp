@@ -10,12 +10,13 @@
 using std::cout;
 using std::endl;
 using std::vector;
+using std::to_string;
 
 namespace quackml {
 
-float getGradient(idx_t n, float Sigma, float C, float theta, float lambda) {
-    return (1.0 / n) * ((Sigma * theta - C) + (lambda * theta));
-}
+// float getGradient(idx_t n, float Sigma, float C, float theta, float lambda) {
+//     return (1.0 / n) * ((Sigma * theta - C) + (lambda * theta));
+// }
 
 // struct LinearRegState {
 //     idx_t count;
@@ -66,27 +67,109 @@ float getGradient(idx_t n, float Sigma, float C, float theta, float lambda) {
 //     catalog.CreateFunction(*conn.context, info);
 // }
 
-struct LinearRegressionState {
-    double theta;
+void printMatrix(std::vector<std::vector<double>> &matrix) {
+    // Debugging tool
+    for (auto row : matrix) {
+        for (auto element : row) {
+            std::cout << element << ", ";
+        }
+        std::cout << "\n";
+    }
+    std::cout << "\n";
+};
 
+void matrixScalarMultiply(std::vector<std::vector<double>> &matrix, float scalar, std::vector<std::vector<double>> &result) {
+    // Multiply each element of a matrix by a scalar
+    for (size_t i=0; i<matrix.size(); i++) {
+        for (size_t j=0; j<matrix[0].size(); j++) {
+            result[i][j] = matrix[i][j] * scalar;
+        }
+    };
+};
+
+void matrixMultiply(std::vector<std::vector<double>> &matrix1, std::vector<std::vector<double>> &matrix2, std::vector<std::vector<double>> &result) {
+    // Multiply two matrices
+    for (size_t i=0; i<matrix1.size(); i++) {
+        for (size_t j=0; j<matrix2[0].size(); j++) {
+            for (size_t k=0; k<matrix2.size(); k++) {
+                result[i][j] += matrix1[i][k] * matrix2[k][j];
+            }
+        }
+    }
+};
+
+void matrixSubtract(std::vector<std::vector<double>> &matrix1, std::vector<std::vector<double>> &matrix2, std::vector<std::vector<double>> &result) {
+    for (size_t i=0; i<matrix1.size(); i++) {
+        for (size_t j=0; j<matrix1[0].size(); j++) {
+            result[i][j] = matrix1[i][j] - matrix2[i][j];
+        }
+    }
+};
+
+void matrixAdd(std::vector<std::vector<double>> &matrix1, std::vector<std::vector<double>> &matrix2, std::vector<std::vector<double>> &result) {
+    for (size_t i=0; i<matrix1.size(); i++) {
+        for (size_t j=0; j<matrix1[0].size(); j++) {
+            result[i][j] = matrix1[i][j] + matrix2[i][j];
+        }
+    }
+};
+
+std::vector<std::vector<double>> getGradientND(std::vector<std::vector<double>> &sigma, std::vector<std::vector<double>> &c, std::vector<std::vector<double>> &theta, double lambda) {
+    size_t n = sigma.size();
+    size_t d = sigma[0].size();
+    
+    // Sigma * theta
+    std::vector<std::vector<double>> result(d, std::vector<double>(1, 0));
+    matrixMultiply(sigma, theta, result);
+
+    //std::cout << "Sigma * theta complete \n";
+
+    // Sigma * theta - C
+    matrixSubtract(result, c, result);
+
+    //std::cout << "Sigma * theta - C complete \n";
+
+    // (1/n) * (Sigma * theta - C)
+    matrixScalarMultiply(result, (1.0 / n), result);
+
+    //std::cout << "(1/n) * (Sigma * theta - C) complete \n";
+
+    // lambda * theta
+    std::vector<std::vector<double>> regularizer(d, std::vector<double>(1, 0));
+    matrixScalarMultiply(theta, lambda, regularizer);
+
+    //std::cout << "lambda * theta complete \n";
+
+    // (1/n) * (Sigma * theta - C) + (lambda * theta)
+    matrixAdd(result, regularizer, result);
+
+    //std::cout << "(1/n) * (Sigma * theta - C) + (lambda * theta) complete \n";
+
+    return result;
+};
+
+
+struct LinearRegressionState {
     idx_t count;
-    double Sigma;
-    double C;
+    idx_t d;
+
+    std::vector<std::vector<double>>* theta;
+    std::vector<std::vector<double>>* Sigma;
+    std::vector<std::vector<double>>* C;
 
     double alpha;
     double lambda;
     int iterations;
 };
 
-
 struct LinearRegressionFunction {
     template <class STATE>
     static void Initialize(STATE &state) {
-        state.theta = 1.0;
-
         state.count = 0;
-        state.Sigma = 0.0;
-        state.C = 0.0;
+        state.d = 0;
+
+        state.Sigma = new std::vector<std::vector<double>>();
+        state.C = new std::vector<std::vector<double>>(); 
 
         state.alpha = 100;
         state.lambda = 0.0;
@@ -95,7 +178,9 @@ struct LinearRegressionFunction {
 
     template <class STATE>
     static void Destroy(STATE &state, duckdb::AggregateInputData &aggr_input_data) {
-        return;
+        delete state.theta;
+        delete state.Sigma;
+        delete state.C;
     }
 
     static bool IgnoreNull() {
@@ -129,18 +214,34 @@ static void LinearRegressionUpdate(duckdb::Vector inputs[], duckdb::AggregateInp
     for (idx_t i = 0; i < count; i++) {
         if (feature_data.validity.RowIsValid(feature_data.sel->get_index(i)) && label_data.validity.RowIsValid(label_data.sel->get_index(i))) {
             auto &state = *states[sdata.sel->get_index(i)];
+            auto feature_vector = duckdb::ListValue::GetChildren(feature.GetValue(i));
+            auto d = feature_vector.size();
+            state.d = d;
 
-            auto feature_value = feature.GetValue(i);
-            auto feature_children = duckdb::ListValue::GetChildren(feature_value);
-            std::cout << "feature: " << feature_children[0] << "\n";
-            // TODO: Start here
-            auto label_value = duckdb::UnifiedVectorFormat::GetData<double>(label_data)[label_data.sel->get_index(i)];
             state.alpha = duckdb::UnifiedVectorFormat::GetData<double>(alpha_data)[alpha_data.sel->get_index(i)];
             state.lambda = duckdb::UnifiedVectorFormat::GetData<double>(lambda_data)[lambda_data.sel->get_index(i)];
             state.iterations = duckdb::UnifiedVectorFormat::GetData<int>(iterations_data)[iterations_data.sel->get_index(i)];
+            auto label_value = duckdb::UnifiedVectorFormat::GetData<double>(label_data)[label_data.sel->get_index(i)];
 
-            //state.Sigma += feature_value * feature_value;
-            //state.C += feature_value * label_value;
+            // Initialise Sigma, C if empty
+            if (state.Sigma->size() == 0) {
+                // If sigma is empty, c will be also so only one check needed
+                for (idx_t j = 0; j < d; j++) {
+                    state.Sigma->push_back(std::vector<double>(d, 0));
+                    state.C->push_back(std::vector<double>(1, 0));
+                }
+            }
+
+            // Update Sigma
+            // TODO: Only need to calculate upper triangle
+            for (idx_t j = 0; j < d; j++) {
+                auto feature_j = feature_vector[j].GetValue<double>();
+                (*state.C)[j][0] += feature_j * label_value;
+                for (idx_t k = 0; k < d; k++) {
+                    (*state.Sigma)[j][k] += feature_j * feature_vector[k].GetValue<double>();
+                }
+            }
+
             state.count++;
         }
     }
@@ -154,8 +255,8 @@ static void LinearRegressionCombine(duckdb::Vector &state_vector, duckdb::Vector
 
     for (idx_t i = 0; i < count; i++) {
         auto &state = *states_ptr[sdata.sel->get_index(i)];
-        combined_ptr[i]->Sigma += state.Sigma;
-        combined_ptr[i]->C += state.C;
+        matrixAdd(*combined_ptr[i]->Sigma, *state.Sigma, *combined_ptr[i]->Sigma);
+        matrixAdd(*combined_ptr[i]->C, *state.C, *combined_ptr[i]->C);
         combined_ptr[i]->count += state.count;
     }
 }
@@ -168,17 +269,39 @@ static void LinearRegressionFinalize(duckdb::Vector &state_vector, duckdb::Aggre
     auto old_len = duckdb::ListVector::GetListSize(result);
 
     for (idx_t i = 0; i < count; i++) {
+        //std::cout << "Finalize " << i << " called\n";
         const auto rid = i + offset;
         auto &state = *states[sdata.sel->get_index(i)];
+        // Initialise theta
+        state.theta = new std::vector<std::vector<double>>(state.d, std::vector<double>(1, 0));
 
+        // Gradient descent
         for (idx_t j = 0; j < state.iterations; j++) {
-            auto gradient = getGradient(state.count, state.Sigma, state.C, state.theta, state.lambda);
-            state.theta -= state.alpha * gradient;
+            //std::cout << "Iteration " << j << " of " << state.iterations << "\n";
+            //std::cout << "Sigma: \n";
+            //printMatrix(*state.Sigma);
+            // std::cout << "C: \n";
+            // printMatrix(*state.C);
+            // std::cout << "Theta: \n";
+            // printMatrix(*state.theta);
+            auto gradient = getGradientND(*state.Sigma, *state.C, *state.theta, state.lambda);
+            // std::cout << "Gradient calculated \n";
+            matrixScalarMultiply(gradient, state.alpha, gradient);
+            // std::cout << "Gradient scaled \n";
+            matrixSubtract(*state.theta, gradient, *state.theta);
+            // std::cout << "Theta updated \n";
         }
 
-        duckdb::Value theta_value = duckdb::Value::CreateValue(state.theta);
-        auto theta_pair = duckdb::Value::STRUCT({std::make_pair("key", "theta"), std::make_pair("value", theta_value)});
-        duckdb::ListVector::PushBack(result, theta_pair);
+        // std::cout << "Gradient descent complete \n";
+
+        // Create weight result pairs
+        for (idx_t j = 0; j < state.d; j++) {
+            auto theta_value = duckdb::Value::CreateValue((*state.theta)[j][0]);
+            auto key = "theta_" + std::to_string(j);
+            auto theta_pair = duckdb::Value::STRUCT({std::make_pair("key", key), std::make_pair("value", theta_value)});
+            duckdb::ListVector::PushBack(result, theta_pair);
+            // std::cout << "Theta " << j << " added\n";
+        }
 
         // Needed?
         auto list_struct_data = duckdb::ListVector::GetData(result);
