@@ -1,0 +1,23 @@
+# name: test/sql/quackml.test
+# description: test quackml extension
+# group: [quackml]
+
+# Before we load the extension, this will fail
+statement error
+SELECT quackml('Sam');
+----
+Catalog Error: Scalar Function with name quackml does not exist!
+
+# Require statement will ensure this test is run with this extension loaded
+require quackml
+
+# Confirm the extension works
+query I
+SELECT quackml('Sam');
+----
+Quackml Sam 🐥
+
+query I
+SELECT quackml_openssl_version('Michael');
+----
+<REGEX>:Quackml Michael, my linked OpenSSL version is OpenSSL.*
