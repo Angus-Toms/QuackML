@@ -1,5 +1,6 @@
-// UDAF to perform 1D regularised linear regression 
-// Build with new constructor
+// UDAF to perform regularised linear regression 
+// TODO: Debug group by clauses 
+// TODO: Debug issue with seg faults from multiple calls to same table - destroy function not working?
 
 #include "functions/linear_reg.hpp"
 
@@ -110,9 +111,26 @@ struct LinearRegressionFunction {
 
     template <class STATE>
     static void Destroy(STATE &state, duckdb::AggregateInputData &aggr_input_data) {
-        delete state.theta;
-        delete state.Sigma;
+        if (state.Sigma) {
+            for (auto row : *state.Sigma) {
+                row.clear();
+            }
+            delete state.Sigma;
+        }
+
+        if (state.C) {
+            for (auto row : *state.C) {
+                row.clear();
+            }
         delete state.C;
+        }
+        
+        if (state.theta) {
+            for (auto row : *state.theta) {
+                row.clear();
+            }
+            delete state.theta;
+        }
     }
 
     static bool IgnoreNull() {
