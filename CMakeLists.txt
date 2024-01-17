@@ -1,7 +1,7 @@
 cmake_minimum_required(VERSION 2.8.12)
 
 # Set extension name here
-set(TARGET_NAME quack)
+set(TARGET_NAME quackml)
 
 # DuckDB's extension distribution supports vcpkg. As such, dependencies can be added in ./vcpkg.json and then
 # used in cmake with find_package. Feel free to remove or replace with other dependencies.
@@ -15,7 +15,7 @@ project(${TARGET_NAME})
 include_directories(src/include)
 
 set(EXTENSION_SOURCES 
-  src/quack_extension.cpp 
+  src/quackml_extension.cpp 
   src/functions/sum.cpp 
   src/functions/sum_count.cpp
   src/functions/linear_reg.cpp

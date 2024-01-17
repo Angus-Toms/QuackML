@@ -59,10 +59,10 @@ void matrixAdd(std::vector<std::vector<double>> &matrix1, std::vector<std::vecto
     }
 };
 
-std::vector<std::vector<double>> getGradientND(std::vector<std::vector<double>> &sigma, std::vector<std::vector<double>> &c, std::vector<std::vector<double>> &theta, double lambda) {
+std::vector<std::vector<double>> getGradientND(std::vector<std::vector<double>> &sigma, std::vector<std::vector<double>> &c, std::vector<std::vector<double>> &theta, double lambda) {    
     size_t n = sigma.size();
     size_t d = sigma[0].size();
-    
+
     // Sigma * theta
     std::vector<std::vector<double>> result(d, std::vector<double>(1, 0));
     matrixMultiply(sigma, theta, result);
@@ -79,13 +79,14 @@ std::vector<std::vector<double>> getGradientND(std::vector<std::vector<double>> 
 
     // (1/n) * (Sigma * theta - C) + (lambda * theta)
     matrixAdd(result, regularizer, result);
+
     return result;
 };
 
 
 struct LinearRegressionState {
     idx_t count;
-    idx_t d;
+    int d;
 
     std::vector<std::vector<double>>* theta;
     std::vector<std::vector<double>>* Sigma;
@@ -185,23 +186,23 @@ static void LinearRegressionCombine(duckdb::Vector &state_vector, duckdb::Vector
     auto states_ptr = (LinearRegressionState **)sdata.data;
     auto combined_ptr = duckdb::FlatVector::GetData<LinearRegressionState *>(combined);
 
-    std::cout << "Combine called\n";
-
-    // TODO: Ensure Sigma, C, theta are initialised before combining
     for (idx_t i = 0; i < count; i++) {
-        std::cout << "Combine loop " << i << "\n";
         auto &state = *states_ptr[sdata.sel->get_index(i)];
         if (!combined_ptr[i]->Sigma) {
-            std::cout << "Instantiating Sigma for state: " << &state << "\n";
+            //std::cout << "Instantiating Sigma for state: " << &state << "\n";
             combined_ptr[i]->Sigma = new std::vector<std::vector<double>>(state.d, std::vector<double>(state.d, 0));
             combined_ptr[i]->C = new std::vector<std::vector<double>>(state.d, std::vector<double>(1, 0));
         }
-        std::cout << "Combining state: " << &state << "\n";
         matrixAdd(*combined_ptr[i]->Sigma, *state.Sigma, *combined_ptr[i]->Sigma);
         matrixAdd(*combined_ptr[i]->C, *state.C, *combined_ptr[i]->C);
         combined_ptr[i]->count += state.count;
+        
+        // Questionable
+        combined_ptr[i]->d = state.d;
+        combined_ptr[i]->alpha = state.alpha;
+        combined_ptr[i]->lambda = state.lambda;
+        combined_ptr[i]->iterations = state.iterations;
     }
-    // START HERE: Check combining is correct, check how many times this function is called and with what args
 }
 
 static void LinearRegressionFinalize(duckdb::Vector &state_vector, duckdb::AggregateInputData &, duckdb::Vector &result, idx_t count, idx_t offset) {
@@ -211,22 +212,16 @@ static void LinearRegressionFinalize(duckdb::Vector &state_vector, duckdb::Aggre
     auto &mask = duckdb::FlatVector::Validity(result);
     auto old_len = duckdb::ListVector::GetListSize(result);
 
-    std::cout << "Finalize preamble\n";
-
     for (idx_t i = 0; i < count; i++) {
-        std::cout << "Finalize loop " << i << "\n";
         const auto rid = i + offset;
         auto &state = *states[sdata.sel->get_index(i)];
         // Instantiate theta if not already
         if (!state.theta) {
-            std::cout << "Instantiating theta for state: " << &state << "\n";
-            state.theta = new std::vector<std::vector<double>>(state.d, std::vector<double>(1, 0));
-            std::cout << "Theta instantiated\n";
+            state.theta = new std::vector<std::vector<double>>(state.d, std::vector<double>(1, 0.0));
         }
 
         // Gradient descent
         for (idx_t j = 0; j < state.iterations; j++) {
-            std::cout << "GD iteration " << j << "\n";
             auto gradient = getGradientND(*state.Sigma, *state.C, *state.theta, state.lambda);
             matrixScalarMultiply(gradient, state.alpha, gradient);
             matrixSubtract(*state.theta, gradient, *state.theta);
@@ -238,7 +233,6 @@ static void LinearRegressionFinalize(duckdb::Vector &state_vector, duckdb::Aggre
             auto key = "theta_" + std::to_string(j);
             auto theta_pair = duckdb::Value::STRUCT({std::make_pair("key", key), std::make_pair("value", theta_value)});
             duckdb::ListVector::PushBack(result, theta_pair);
-            std::cout << "Pushed back theta pair " << j << "\n";
         }
 
         // Needed?
@@ -248,7 +242,6 @@ static void LinearRegressionFinalize(duckdb::Vector &state_vector, duckdb::Aggre
         old_len += list_struct_data[rid].length;
     }
     result.Verify(count);
-    std::cout << "Finalize complete\n";
 }
 
 duckdb::unique_ptr<duckdb::FunctionData> LinearRegressionBind(duckdb::ClientContext &context, duckdb::AggregateFunction &function, duckdb::vector<duckdb::unique_ptr<duckdb::Expression>> &arguments) {
