@@ -1,7 +1,7 @@
-// sum_calls.hpp
+// sum_query.hpp
 
-#ifndef SUM_CALLS_HPP
-#define SUM_CALLS_HPP
+#ifndef SUM_QUERY_HPP
+#define SUM_QUERY_HPP
 
 #pragma once
 #include "duckdb.hpp"
@@ -10,16 +10,16 @@
 
 namespace quackml {
 
-struct SumCallsState {
+struct SumQueryState {
     double sum;
 };
 
-struct SumCallsOperation;
+struct SumQueryOperation;
 
-struct SumCalls {
+struct SumQuery {
     static void RegisterFunction(duckdb::Connection &conn, duckdb::Catalog &catalog);
 };
 
 } // namespace quackml
 
-#endif // SUM_HPP
+#endif // SUM_QUERY_HPP

@@ -1,7 +1,7 @@
 // Ridge linear regression with L2 cost function, optimised with GD using covariance matrix.
 // Covariance matrix calculations done through batch of aggregate queries 
 
-#include "functions/linear_reg_calls.hpp"
+#include "functions/linear_reg_query.hpp"
 #include <iostream>
 
 namespace quackml {
@@ -11,7 +11,7 @@ float getGradient1D(idx_t n, double Sigma, double C, double theta, double lambda
     return (1.0 / n) * ((Sigma * theta - C) + (lambda * theta));
 };
 
-struct LinearRegressionCallsState {
+struct LinearRegressionQueryState {
     idx_t count;
 
     double theta;
@@ -23,7 +23,7 @@ struct LinearRegressionCallsState {
     idx_t iter;
 };
 
-struct LinearRegressionCallsFunction {
+struct LinearRegressionQueryFunction {
     template <class STATE> 
     static void Initialize(STATE &state) {
         state.count = 0;
@@ -47,7 +47,7 @@ struct LinearRegressionCallsFunction {
     }
 };
 
-static void LinearRegressionCallsUpdate(duckdb::Vector inputs[], duckdb::AggregateInputData &, idx_t input_count, duckdb::Vector &state_vector, idx_t count) {
+static void LinearRegressionQueryUpdate(duckdb::Vector inputs[], duckdb::AggregateInputData &, idx_t input_count, duckdb::Vector &state_vector, idx_t count) {
     auto &features = inputs[0];
     auto &labels = inputs[1];
     auto &alpha = inputs[2];
@@ -68,7 +68,7 @@ static void LinearRegressionCallsUpdate(duckdb::Vector inputs[], duckdb::Aggrega
 
     duckdb::UnifiedVectorFormat sdata;
     state_vector.ToUnifiedFormat(count, sdata);
-    auto states = (LinearRegressionCallsState **)sdata.data;
+    auto states = (LinearRegressionQueryState **)sdata.data;
     
     // TODO: Update for multiple states in future
     auto state = states[sdata.sel->get_index(0)];
@@ -100,23 +100,19 @@ static void LinearRegressionCallsUpdate(duckdb::Vector inputs[], duckdb::Aggrega
     // Get sigma by query
     state->sigma = con.Query("SELECT SUM(feature * feature) FROM t;")->GetValue<double>(0, 0);
 
-    std::cout << "sigma: " << state->sigma << std::endl;
-
     // Get c by query
     state->c = con.Query("SELECT SUM(feature * label) FROM t;")->GetValue<double>(0, 0);
-
-    std::cout << "c: " << state->c << std::endl;
 
     // Increase count
     state->count += count;
 
 }
 
-static void LinearRegressionCallsCombine(duckdb::Vector &state_vector, duckdb::Vector &combined, duckdb::AggregateInputData &, idx_t count) {
+static void LinearRegressionQueryCombine(duckdb::Vector &state_vector, duckdb::Vector &combined, duckdb::AggregateInputData &, idx_t count) {
     duckdb::UnifiedVectorFormat sdata;
     state_vector.ToUnifiedFormat(count, sdata);
-    auto states_ptr = (LinearRegressionCallsState **)sdata.data;
-    auto combined_ptr = duckdb::FlatVector::GetData<LinearRegressionCallsState *>(combined);
+    auto states_ptr = (LinearRegressionQueryState **)sdata.data;
+    auto combined_ptr = duckdb::FlatVector::GetData<LinearRegressionQueryState *>(combined);
 
     for (idx_t i = 0; i < count; i++) {
         auto &state = *states_ptr[sdata.sel->get_index(i)];
@@ -130,10 +126,10 @@ static void LinearRegressionCallsCombine(duckdb::Vector &state_vector, duckdb::V
     }
 }
 
-static void LinearRegressionCallsFinalize(duckdb::Vector &state_vector, duckdb::AggregateInputData &, duckdb::Vector &result, idx_t count, idx_t offset) {
+static void LinearRegressionQueryFinalize(duckdb::Vector &state_vector, duckdb::AggregateInputData &, duckdb::Vector &result, idx_t count, idx_t offset) {
     duckdb::UnifiedVectorFormat sdata;
     state_vector.ToUnifiedFormat(count, sdata);
-    auto states = (LinearRegressionCallsState **)sdata.data;
+    auto states = (LinearRegressionQueryState **)sdata.data;
     auto &mask = duckdb::FlatVector::Validity(result);
     auto old_len = duckdb::ListVector::GetListSize(result);
 
@@ -145,7 +141,6 @@ static void LinearRegressionCallsFinalize(duckdb::Vector &state_vector, duckdb::
         for (idx_t j = 0; j < state.iter; j++) {
             auto gradient = getGradient1D(state.count, state.sigma, state.c, state.theta, state.lambda);
             state.theta -= state.alpha * gradient;
-            std::cout << j << " iterations, theta: " << state.theta << std::endl;
         }
 
         auto theta_pair = duckdb::Value::STRUCT({std::make_pair("key", "theta"), std::make_pair("value", duckdb::Value::CreateValue(state.theta))});
@@ -160,13 +155,13 @@ static void LinearRegressionCallsFinalize(duckdb::Vector &state_vector, duckdb::
     result.Verify(count);
 }
 
-duckdb::unique_ptr<duckdb::FunctionData> LinearRegressionCallsBind(duckdb::ClientContext &context, duckdb::AggregateFunction &function, duckdb::vector<duckdb::unique_ptr<duckdb::Expression>> &arguments) {
+duckdb::unique_ptr<duckdb::FunctionData> LinearRegressionQueryBind(duckdb::ClientContext &context, duckdb::AggregateFunction &function, duckdb::vector<duckdb::unique_ptr<duckdb::Expression>> &arguments) {
     auto struct_type = duckdb::LogicalType::MAP(duckdb::LogicalType::VARCHAR, duckdb::LogicalType::DOUBLE);
     function.return_type = struct_type;
     return duckdb::make_uniq<duckdb::VariableReturnBindData>(function.return_type);
 }
 
-duckdb::AggregateFunction GetLinearRegressionCallsFunction() {
+duckdb::AggregateFunction GetLinearRegressionQueryFunction() {
     auto arg_types = duckdb::vector<duckdb::LogicalType>{
         duckdb::LogicalType::DOUBLE, //features 
         duckdb::LogicalType::DOUBLE, //labels
@@ -176,25 +171,25 @@ duckdb::AggregateFunction GetLinearRegressionCallsFunction() {
     };
 
     return duckdb::AggregateFunction(
-        "linear_regression_calls",                                                  // name
+        "linear_regression_query",                                                  // name
         arg_types,                                                                  // argument types
         duckdb::LogicalTypeId::MAP,                                                 // return type
-        duckdb::AggregateFunction::StateSize<LinearRegressionCallsState>,           // state size
-        duckdb::AggregateFunction::StateInitialize<LinearRegressionCallsState, LinearRegressionCallsFunction>,  // state initialize
-        LinearRegressionCallsUpdate,                                                // update
-        LinearRegressionCallsCombine,                                               // combine
-        LinearRegressionCallsFinalize,                                              // finalize
+        duckdb::AggregateFunction::StateSize<LinearRegressionQueryState>,           // state size
+        duckdb::AggregateFunction::StateInitialize<LinearRegressionQueryState, LinearRegressionQueryFunction>,  // state initialize
+        LinearRegressionQueryUpdate,                                                // update
+        LinearRegressionQueryCombine,                                               // combine
+        LinearRegressionQueryFinalize,                                              // finalize
         nullptr,                                                                    // simple update
-        LinearRegressionCallsBind,                                                  // bind
-        duckdb::AggregateFunction::StateDestroy<LinearRegressionCallsState, LinearRegressionCallsFunction>      // state destroy     
+        LinearRegressionQueryBind,                                                  // bind
+        duckdb::AggregateFunction::StateDestroy<LinearRegressionQueryState, LinearRegressionQueryFunction>      // state destroy     
     );
 }
 
-void LinearRegressionCalls::RegisterFunction(duckdb::Connection &conn, duckdb::Catalog &catalog) {
-    duckdb::AggregateFunctionSet linear_regression_calls("linear_regression_calls");
-    linear_regression_calls.AddFunction(GetLinearRegressionCallsFunction());
-    duckdb::CreateAggregateFunctionInfo linear_regression_calls_info(linear_regression_calls);
-    catalog.CreateFunction(*conn.context, linear_regression_calls_info);
+void LinearRegressionQuery::RegisterFunction(duckdb::Connection &conn, duckdb::Catalog &catalog) {
+    duckdb::AggregateFunctionSet linear_regression_query("linear_regression_query");
+    linear_regression_query.AddFunction(GetLinearRegressionQueryFunction());
+    duckdb::CreateAggregateFunctionInfo linear_regression_query_info(linear_regression_query);
+    catalog.CreateFunction(*conn.context, linear_regression_query_info);
 }
 
 } // namespace quackml

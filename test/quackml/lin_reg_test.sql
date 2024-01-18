@@ -1,7 +1,7 @@
 /*
 100 observations of 15 dimensional features
-
 weights = [5, -3, 5.8, -2.9, 7.1, 3.8, -8, 1.2 ...]
+
 */
 
 CREATE TABLE my_table (features DOUBLE[], label DOUBLE);

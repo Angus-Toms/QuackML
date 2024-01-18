@@ -1,7 +1,7 @@
-// linear_reg_calls.hpp 
+// linear_reg_query_nd.hpp 
 
-#ifndef LINEAR_REG_CALLS_HPP
-#define LINEAR_REG_CALLS_HPP
+#ifndef LINEAR_REG_QUERY_HPP
+#define LINEAR_REG_QUERY_HPP
 
 #pragma once
 #include "duckdb.hpp"
@@ -16,10 +16,10 @@
 
 namespace quackml {
 
-struct LinearRegressionCalls {
+struct LinearRegressionQuery {
     static void RegisterFunction(duckdb::Connection &conn, duckdb::Catalog &catalog);
 };
 
 } // namespace quackml
 
-#endif // LINEAR_REG_CALLS_HPP
+#endif // LINEAR_REG_QUERY_HPP

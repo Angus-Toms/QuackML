@@ -1,7 +1,7 @@
 // Testing conversion of tasks to DB calls
 // Implementation of sum function, uses call to a sub database to compute operations
 
-#include "functions/calls.hpp"
+#include "functions/sum_query.hpp"
 
 #include <iostream>
 using std::cout;
@@ -9,7 +9,7 @@ using std::endl;
 
 namespace quackml {
 
-struct SumCallsOperation {
+struct SumQueryOperation {
     template <class STATE>
     static void Initialize(STATE &state) {
         state.sum = 0;
@@ -47,16 +47,16 @@ struct SumCallsOperation {
     }
 };
 
-duckdb::AggregateFunction GetSumCallFunction() {
-    return duckdb::AggregateFunction::UnaryAggregate<SumCallsState, int, int, SumCallsOperation>(
+duckdb::AggregateFunction GetSumQueryFunction() {
+    return duckdb::AggregateFunction::UnaryAggregate<SumQueryState, int, int, SumQueryOperation>(
         duckdb::LogicalType::INTEGER, duckdb::LogicalType::INTEGER);
 }
 
-void SumCalls::RegisterFunction(duckdb::Connection &conn, duckdb::Catalog &catalog) {
-    duckdb::AggregateFunctionSet my_sum("sum_calls");
-    my_sum.AddFunction(GetSumCallFunction());
-    duckdb::CreateAggregateFunctionInfo my_sum_info(my_sum);
-    catalog.CreateFunction(*conn.context, my_sum_info);
+void SumQuery::RegisterFunction(duckdb::Connection &conn, duckdb::Catalog &catalog) {
+    duckdb::AggregateFunctionSet sum_query("sum_query");
+    sum_query.AddFunction(GetSumQueryFunction());
+    duckdb::CreateAggregateFunctionInfo sum_query_info(sum_query);
+    catalog.CreateFunction(*conn.context, sum_query_info);
 }
 
 } // namespace quackml
