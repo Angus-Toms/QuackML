@@ -19,7 +19,8 @@ set(EXTENSION_SOURCES
   src/functions/sum.cpp 
   src/functions/sum_count.cpp
   src/functions/linear_reg.cpp
-  src/functions/calls.cpp)
+  src/functions/calls.cpp
+  src/functions/linear_reg_calls.cpp)
 
 build_static_extension(${TARGET_NAME} ${EXTENSION_SOURCES})
 build_loadable_extension(${TARGET_NAME} " " ${EXTENSION_SOURCES})

@@ -64,21 +64,21 @@ std::vector<std::vector<double>> getGradientND(std::vector<std::vector<double>> 
     size_t n = sigma.size();
     size_t d = sigma[0].size();
 
-    // Sigma * theta
+    // sigma * theta
     std::vector<std::vector<double>> result(d, std::vector<double>(1, 0));
     matrixMultiply(sigma, theta, result);
 
-    // Sigma * theta - C
+    // sigma * theta - c
     matrixSubtract(result, c, result);
 
-    // (1/n) * (Sigma * theta - C)
+    // (1/n) * (sigma * theta - c)
     matrixScalarMultiply(result, (1.0 / n), result);
 
     // lambda * theta
     std::vector<std::vector<double>> regularizer(d, std::vector<double>(1, 0));
     matrixScalarMultiply(theta, lambda, regularizer);
 
-    // (1/n) * (Sigma * theta - C) + (lambda * theta)
+    // (1/n) * (sigma * theta - c) + (lambda * theta)
     matrixAdd(result, regularizer, result);
 
     return result;
@@ -90,8 +90,8 @@ struct LinearRegressionState {
     int d;
 
     std::vector<std::vector<double>>* theta;
-    std::vector<std::vector<double>>* Sigma;
-    std::vector<std::vector<double>>* C;
+    std::vector<std::vector<double>>* sigma;
+    std::vector<std::vector<double>>* c;
 
     double alpha;
     double lambda;
@@ -104,25 +104,25 @@ struct LinearRegressionFunction {
         state.count = 0;
         state.d = 0;
 
-        state.alpha = 100;
+        state.alpha = 0.01;
         state.lambda = 0.0;
         state.iterations = 1000;
     }
 
     template <class STATE>
     static void Destroy(STATE &state, duckdb::AggregateInputData &aggr_input_data) {
-        if (state.Sigma) {
-            for (auto row : *state.Sigma) {
+        if (state.sigma) {
+            for (auto row : *state.sigma) {
                 row.clear();
             }
-            delete state.Sigma;
+            delete state.sigma;
         }
 
-        if (state.C) {
-            for (auto row : *state.C) {
+        if (state.c) {
+            for (auto row : *state.c) {
                 row.clear();
             }
-        delete state.C;
+        delete state.c;
         }
         
         if (state.theta) {
@@ -173,24 +173,24 @@ static void LinearRegressionUpdate(duckdb::Vector inputs[], duckdb::AggregateInp
             state.iterations = duckdb::UnifiedVectorFormat::GetData<int>(iterations_data)[iterations_data.sel->get_index(i)];
             auto label_value = duckdb::UnifiedVectorFormat::GetData<double>(label_data)[label_data.sel->get_index(i)];
 
-            // Initialise Sigma, C if empty
-            if (state.Sigma == nullptr) {
+            // Initialise sigma, c if empty
+            if (state.sigma == nullptr) {
                 // If sigma is empty, c will be also so only one check needed
-                state.Sigma = new std::vector<std::vector<double>>();
-                state.C = new std::vector<std::vector<double>>();
+                state.sigma = new std::vector<std::vector<double>>();
+                state.c = new std::vector<std::vector<double>>();
                 for (idx_t j = 0; j < d; j++) {
-                    state.Sigma->push_back(std::vector<double>(d, 0));
-                    state.C->push_back(std::vector<double>(1, 0));
+                    state.sigma->push_back(std::vector<double>(d, 0));
+                    state.c->push_back(std::vector<double>(1, 0));
                 }
             }
 
-            // Update Sigma, C
+            // Update sigma, c
             // TODO: Only need to calculate upper triangle
             for (idx_t j = 0; j < d; j++) {
                 auto feature_j = feature_vector[j].GetValue<double>();
-                (*state.C)[j][0] += feature_j * label_value;
+                (*state.c)[j][0] += feature_j * label_value;
                 for (idx_t k = 0; k < d; k++) {
-                    (*state.Sigma)[j][k] += feature_j * feature_vector[k].GetValue<double>();
+                    (*state.sigma)[j][k] += feature_j * feature_vector[k].GetValue<double>();
                 }
             }
             state.count++;
@@ -206,13 +206,13 @@ static void LinearRegressionCombine(duckdb::Vector &state_vector, duckdb::Vector
 
     for (idx_t i = 0; i < count; i++) {
         auto &state = *states_ptr[sdata.sel->get_index(i)];
-        if (!combined_ptr[i]->Sigma) {
-            //std::cout << "Instantiating Sigma for state: " << &state << "\n";
-            combined_ptr[i]->Sigma = new std::vector<std::vector<double>>(state.d, std::vector<double>(state.d, 0));
-            combined_ptr[i]->C = new std::vector<std::vector<double>>(state.d, std::vector<double>(1, 0));
+        if (!combined_ptr[i]->sigma) {
+            //std::cout << "Instantiating sigma for state: " << &state << "\n";
+            combined_ptr[i]->sigma = new std::vector<std::vector<double>>(state.d, std::vector<double>(state.d, 0));
+            combined_ptr[i]->c = new std::vector<std::vector<double>>(state.d, std::vector<double>(1, 0));
         }
-        matrixAdd(*combined_ptr[i]->Sigma, *state.Sigma, *combined_ptr[i]->Sigma);
-        matrixAdd(*combined_ptr[i]->C, *state.C, *combined_ptr[i]->C);
+        matrixAdd(*combined_ptr[i]->sigma, *state.sigma, *combined_ptr[i]->sigma);
+        matrixAdd(*combined_ptr[i]->c, *state.c, *combined_ptr[i]->c);
         combined_ptr[i]->count += state.count;
         
         // Questionable
@@ -240,7 +240,7 @@ static void LinearRegressionFinalize(duckdb::Vector &state_vector, duckdb::Aggre
 
         // Gradient descent
         for (idx_t j = 0; j < state.iterations; j++) {
-            auto gradient = getGradientND(*state.Sigma, *state.C, *state.theta, state.lambda);
+            auto gradient = getGradientND(*state.sigma, *state.c, *state.theta, state.lambda);
             matrixScalarMultiply(gradient, state.alpha, gradient);
             matrixSubtract(*state.theta, gradient, *state.theta);
         }
@@ -269,7 +269,6 @@ duckdb::unique_ptr<duckdb::FunctionData> LinearRegressionBind(duckdb::ClientCont
 } 
 
 duckdb::AggregateFunction GetLinearRegressionFunction() {
-
     auto arg_types = duckdb::vector<duckdb::LogicalType>{
         duckdb::LogicalType::LIST(duckdb::LogicalType::DOUBLE), // features
         duckdb::LogicalType::DOUBLE, // label
