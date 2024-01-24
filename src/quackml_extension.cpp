@@ -11,8 +11,6 @@
 #include "functions/sum.hpp"
 #include "functions/sum_count.hpp"
 #include "functions/linear_reg.hpp"
-#include "functions/sum_query.hpp"
-#include "functions/linear_reg_query.hpp"
 
 // OpenSSL linked through vcpkg
 #include <openssl/opensslv.h>
@@ -27,8 +25,6 @@ void QuackmlExtension::Load(DuckDB &db) {
     quackml::Sum::RegisterFunction(con, catalog);
     quackml::SumCount::RegisterFunction(con, catalog);
     quackml::LinearRegression::RegisterFunction(con, catalog);
-    quackml::SumQuery::RegisterFunction(con, catalog);
-    quackml::LinearRegressionQuery::RegisterFunction(con, catalog);
 
     con.Commit();
 }

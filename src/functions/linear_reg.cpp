@@ -3,27 +3,17 @@
 // TODO: Debug issue with seg faults from multiple calls to same table - destroy function not working?
 
 #include "functions/linear_reg.hpp"
-#include <chrono>
+
+#include "../types/linear_reg_ring.cpp"
 
 // Testing:
+#include <chrono>
 #include <iostream>
 #include <vector>
 using std::vector;
 using std::to_string;
 
 namespace quackml {
-
-void printMatrix(std::vector<std::vector<double>> &matrix) {
-    // Debugging tool
-    std::cout << "----------\n";
-    for (auto row : matrix) {
-        for (auto element : row) {
-            std::cout << element << ", ";
-        }
-        std::cout << "\n";
-    }
-    std::cout << "----------\n";
-};
 
 void matrixScalarMultiply(std::vector<std::vector<double>> &matrix, float scalar, std::vector<std::vector<double>> &result) {
     // Multiply each element of a matrix by a scalar
@@ -90,9 +80,9 @@ struct LinearRegressionState {
     idx_t count;
     idx_t d;
 
-    std::vector<std::vector<double>>* theta;
-    std::vector<std::vector<double>>* sigma;
-    std::vector<std::vector<double>>* c;
+    std::vector<std::vector<double>> *sigma;
+    std::vector<std::vector<double>> *c;
+    std::vector<std::vector<double>> *theta;
 
     double alpha;
     double lambda;
@@ -103,7 +93,6 @@ struct LinearRegressionFunction {
     template <class STATE>
     static void Initialize(STATE &state) {
         state.count = 0;
-        state.d = 0;
 
         state.alpha = 0.01;
         state.lambda = 0.0;
@@ -112,26 +101,6 @@ struct LinearRegressionFunction {
 
     template <class STATE>
     static void Destroy(STATE &state, duckdb::AggregateInputData &aggr_input_data) {
-        if (state.sigma) {
-            for (auto row : *state.sigma) {
-                row.clear();
-            }
-            delete state.sigma;
-        }
-
-        if (state.c) {
-            for (auto row : *state.c) {
-                row.clear();
-            }
-        delete state.c;
-        }
-        
-        if (state.theta) {
-            for (auto row : *state.theta) {
-                row.clear();
-            }
-            delete state.theta;
-        }
     }
 
     static bool IgnoreNull() {
@@ -140,6 +109,7 @@ struct LinearRegressionFunction {
 };
 
 static void LinearRegressionUpdate(duckdb::Vector inputs[], duckdb::AggregateInputData &, idx_t input_count, duckdb::Vector &state_vector, idx_t count) {
+    auto start_time = std::chrono::high_resolution_clock::now();
     auto &feature = inputs[0];
     auto &label = inputs[1];
     auto &alpha = inputs[2];
@@ -197,96 +167,10 @@ static void LinearRegressionUpdate(duckdb::Vector inputs[], duckdb::AggregateInp
             state.count++;
         }
     }
-}
-
-static void LinearRegressionQueryUpdate(duckdb::Vector inputs[], duckdb::AggregateInputData &, idx_t input_count, duckdb::Vector &state_vector, idx_t count) {
-    auto start_time = std::chrono::high_resolution_clock::now();
-    auto &feature = inputs[0];
-    auto &label = inputs[1];
-    auto &alpha = inputs[2];
-    auto &lambda = inputs[3];
-    auto &iterations = inputs[4];
-
-    duckdb::UnifiedVectorFormat feature_data;
-    duckdb::UnifiedVectorFormat label_data;
-    duckdb::UnifiedVectorFormat alpha_data;
-    duckdb::UnifiedVectorFormat lambda_data;
-    duckdb::UnifiedVectorFormat iterations_data;
-
-    feature.ToUnifiedFormat(count, feature_data);
-    label.ToUnifiedFormat(count, label_data);
-    alpha.ToUnifiedFormat(count, alpha_data);
-    lambda.ToUnifiedFormat(count, lambda_data);
-    iterations.ToUnifiedFormat(count, iterations_data);
-
-    duckdb::UnifiedVectorFormat sdata;
-    state_vector.ToUnifiedFormat(count, sdata);
-    auto states = (LinearRegressionState **)sdata.data;
-
-    // TODO: Support for multiple states (i.e. group by)
-    auto &state = *states[sdata.sel->get_index(0)];
-    state.alpha = duckdb::UnifiedVectorFormat::GetData<double>(alpha_data)[alpha_data.sel->get_index(0)];
-    state.lambda = duckdb::UnifiedVectorFormat::GetData<double>(lambda_data)[lambda_data.sel->get_index(0)];
-    state.iterations = duckdb::UnifiedVectorFormat::GetData<int>(iterations_data)[iterations_data.sel->get_index(0)];
-    state.d = duckdb::ListValue::GetChildren(feature.GetValue(0)).size();
-
-    // Initialise sigma, c if empty
-    if (!state.sigma) {
-        state.sigma = new std::vector<std::vector<double>>();
-        state.c = new std::vector<std::vector<double>>();
-        for (idx_t j = 0; j < state.d; j++) {
-            state.sigma->push_back(std::vector<double>(state.d, 0));
-            state.c->push_back(std::vector<double>(1, 0));
-        }
-    }
-
-    // Instantiate database 
-    duckdb::DuckDB db(nullptr);
-    duckdb::Connection con(db);
-
-    // Create table
-    std::string create_command = "CREATE TABLE t (";
-    for (idx_t i = 0; i < state.d; i++) {
-        create_command += "f_" + std::to_string(i) + " DOUBLE, ";
-    }
-    create_command += "label DOUBLE);";
-    std::cout << create_command << "\n";
-    con.Query(create_command);
-
-    // Insert data 
-    std::string insert_command = "INSERT INTO t VALUES ";
-    for (idx_t i = 0; i < count; i++) {
-        if (feature_data.validity.RowIsValid(feature_data.sel->get_index(i)) && label_data.validity.RowIsValid(label_data.sel->get_index(i))) {
-            auto feature_vector = duckdb::ListValue::GetChildren(feature.GetValue(i));
-            auto label_value = duckdb::UnifiedVectorFormat::GetData<double>(label_data)[label_data.sel->get_index(i)];
-            insert_command += "(";
-            for (idx_t j = 0; j < state.d; j++) {
-                insert_command += std::to_string(feature_vector[j].GetValue<double>()) + ", ";
-            }
-            insert_command += std::to_string(label_value) + ")";
-            if (i != count - 1) {
-                insert_command += ", ";
-            }
-        } 
-    }
-    con.Query(insert_command);
-
-    // Calculate sigma, c 
-    for (idx_t i = 0; i < state.d; i++) {
-        std::string c_command = "SELECT SUM(f_" + std::to_string(i) + " * label) FROM t;";
-        (*state.c)[i][0] = con.Query(c_command)->GetValue<double>(0, 0);
-        for (idx_t j = i; j < state.d; j++) {
-            std::string sigma_command = "SELECT SUM(f_" + std::to_string(i) + " * f_" + std::to_string(j) + ") FROM t;";
-            (*state.sigma)[i][j] = con.Query(sigma_command)->GetValue<double>(0, 0);
-            (*state.sigma)[j][i] = (*state.sigma)[i][j];
-        }
-    }    
-
     auto end_time = std::chrono::high_resolution_clock::now();
     auto duration = std::chrono::duration_cast<std::chrono::milliseconds>(end_time - start_time);
     std::cout << "Time taken: " << duration.count() << "ms\n";
 }
-
 
 static void LinearRegressionCombine(duckdb::Vector &state_vector, duckdb::Vector &combined, duckdb::AggregateInputData &, idx_t count) {
     duckdb::UnifiedVectorFormat sdata;
@@ -301,12 +185,8 @@ static void LinearRegressionCombine(duckdb::Vector &state_vector, duckdb::Vector
             combined_ptr[i]->sigma = new std::vector<std::vector<double>>(state.d, std::vector<double>(state.d, 0));
             combined_ptr[i]->c = new std::vector<std::vector<double>>(state.d, std::vector<double>(1, 0));
         }
-        matrixAdd(*combined_ptr[i]->sigma, *state.sigma, *combined_ptr[i]->sigma);
-        matrixAdd(*combined_ptr[i]->c, *state.c, *combined_ptr[i]->c);
-        combined_ptr[i]->count += state.count;
         
         // Questionable
-        combined_ptr[i]->d = state.d;
         combined_ptr[i]->alpha = state.alpha;
         combined_ptr[i]->lambda = state.lambda;
         combined_ptr[i]->iterations = state.iterations;
@@ -373,7 +253,7 @@ duckdb::AggregateFunction GetLinearRegressionFunction() {
         duckdb::LogicalTypeId::MAP,                                              // return type
         duckdb::AggregateFunction::StateSize<LinearRegressionState>,             // state size
         duckdb::AggregateFunction::StateInitialize<LinearRegressionState, LinearRegressionFunction>, // state initialize
-        LinearRegressionQueryUpdate,                                                  // update
+        LinearRegressionUpdate,                                                  // update
         LinearRegressionCombine,                                                 // combine
         LinearRegressionFinalize,                                                // finalize
         nullptr,                                                                 // simple update

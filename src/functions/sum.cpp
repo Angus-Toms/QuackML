@@ -2,6 +2,7 @@
 // Just to get the hang of UDAFs
 
 #include "functions/sum.hpp"
+#include <iostream>
 
 namespace quackml {
 
@@ -23,6 +24,7 @@ struct SumOperation {
 
     template <class INPUT_TYPE, class STATE, class OP>
     static void Operation(STATE &state, const INPUT_TYPE &input, duckdb::AggregateUnaryInput &unary_input) {
+        std::cout << "Operation called\n";
         state.sum += input; 
     }
 

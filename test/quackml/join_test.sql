@@ -1,0 +1,5 @@
+CREATE TABLE t (i INTEGER);
+INSERT INTO t VALUES (1), (2), (3), (4), (5);
+CREATE TABLE t2 (i INTEGER);
+INSERT INTO t2 VALUES (1), (2), (3), (4), (5);
+SELECT my_sum(t.i) FROM t CROSS JOIN t2;
