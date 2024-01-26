@@ -99,6 +99,18 @@ public:
         }
         return result;
     }
+
+    double getCount() {
+        return count;
+    }
+
+    std::vector<double>* getSums() {
+        return &sums;
+    }
+
+    std::vector<std::vector<double>>* getCovar() {
+        return &covar;
+    }
 };
 
 } // namespace quackml
