@@ -4,8 +4,6 @@
 
 #include "functions/linear_reg.hpp"
 
-#include "../types/linear_reg_ring.cpp"
-
 // Testing:
 #include <chrono>
 #include <iostream>

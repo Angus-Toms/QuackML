@@ -1,6 +1,5 @@
-#include "duckdb.hpp"
+#include "types/linear_reg_ring.hpp"
 
-#include <vector>
 #include <iostream>
 #include <stdexcept>    
 
@@ -11,106 +10,137 @@
 
 namespace quackml {
 
-static void printMatrix(std::vector<std::vector<double>> &myMatrix) {
-    // Debugging tool
-    std::cout << "-------------\n";
-    for (auto row : myMatrix) {
-        for (auto element : row) {
-            std::cout << element << ", ";
+LinearRegressionRingElement::LinearRegressionRingElement() {
+    count = duckdb::Value::DOUBLE(0);
+}
+// Create ring with dxd covariance matrix of 0s
+LinearRegressionRingElement::LinearRegressionRingElement(idx_t d) {
+    this->d = d;
+    count = duckdb::Value::DOUBLE(0);
+
+    auto sums_vector = duckdb::vector<duckdb::Value>(d);
+    auto covar_vector = duckdb::vector<duckdb::Value>(d);
+    for (idx_t i = 0; i < d; i++) {
+        sums_vector[i] = duckdb::Value::DOUBLE(0);
+        auto row = duckdb::vector<duckdb::Value>(d);
+        for (idx_t j = 0; j < d; j++) {
+            row[j] = duckdb::Value::DOUBLE(0);
         }
-        std::cout << "\n";
+        covar_vector[i] = duckdb::Value::LIST(row);
     }
-    std::cout << "-------------\n";
-};
+    sums = duckdb::Value::LIST(sums_vector);
+    covar = duckdb::Value::LIST(covar_vector);
+}
+LinearRegressionRingElement::LinearRegressionRingElement(duckdb::vector<duckdb::Value> features) {
+    d = features.size();
+    
+    count = duckdb::Value::DOUBLE(1);
 
-struct LinearRegressionRingElement : duckdb::LogicalType {
-private:
-    double count;
-    std::vector<double> sums;
-    std::vector<std::vector<double>> covar;
+    sums = duckdb::Value::LIST(features);
 
-public:
-    idx_t d;
-    LinearRegressionRingElement() {
-        count = 0;
+    auto covar_vector = duckdb::vector<duckdb::Value>(d);
+    for (idx_t i = 0; i < d; i++) {
+        auto row = duckdb::vector<duckdb::Value>(d, duckdb::Value::DOUBLE(0));
+        auto feature_value = features[i].GetValue<double>();
+        row[i] = duckdb::Value::DOUBLE(feature_value * feature_value);
+        covar_vector[i] = duckdb::Value::LIST(row);
     }
-    // Create ring with dxd covariance matrix of 0s
-    LinearRegressionRingElement(idx_t d) {
-        this->d = d;
-        count = 0;
-        sums = std::vector<double>(d, 0);
-        covar = std::vector<std::vector<double>>(d, std::vector<double>(d, 0));
+    covar = duckdb::Value::LIST(covar_vector);
+}
+
+LinearRegressionRingElement::~LinearRegressionRingElement() {}
+
+LinearRegressionRingElement LinearRegressionRingElement::operator+(const LinearRegressionRingElement &other) {
+    if (d != other.d) {
+        throw std::invalid_argument("Cannot add LinearRegressionRingElements with different dimensions");
     }
-    LinearRegressionRingElement(std::vector<double> features) {
-        count = 1;
-        features.insert(features.begin(), 0);
-        sums = features;
-        
-        // Instantiate covariance matrix
-        d = features.size();
-        for (idx_t i = 0; i < d; i++) {
-            auto row = new std::vector<double>(d, 0);
-            (*row)[i] = features[i] * features[i]; 
-            covar.push_back(*row);
+    LinearRegressionRingElement result(d);
+    result.count = duckdb::Value::DOUBLE(count.GetValue<double>() + other.count.GetValue<double>());
+
+    // Sums 
+    duckdb::vector<duckdb::Value> sums_vector(d);
+    auto sum_children = duckdb::ListValue::GetChildren(sums);
+    auto other_sum_children = duckdb::ListValue::GetChildren(other.sums);
+    for (idx_t i = 0; i < d; i++) {
+        sums_vector[i] = duckdb::Value::DOUBLE(sum_children[i].GetValue<double>() + other_sum_children[i].GetValue<double>());
+    }
+    result.sums = duckdb::Value::LIST(sums_vector);
+
+    // Covariance matrix
+    duckdb::vector<duckdb::Value> covar_vector(d);
+    auto covar_children = duckdb::ListValue::GetChildren(covar);
+    auto other_covar_children = duckdb::ListValue::GetChildren(other.covar);
+    for (idx_t i = 0; i < d; i++) {
+        auto row = duckdb::vector<duckdb::Value>(d);
+        auto row_children = duckdb::ListValue::GetChildren(covar_children[i]);
+        auto other_row_children = duckdb::ListValue::GetChildren(other_covar_children[i]);
+        for (idx_t j = 0; j < d; j++) {
+            row[j] = duckdb::Value::DOUBLE(row_children[j].GetValue<double>() + other_row_children[j].GetValue<double>());
         }
-        printMatrix(covar);
+        covar_vector[i] = duckdb::Value::LIST(row);
     }
-    ~LinearRegressionRingElement() {}
+    result.covar = duckdb::Value::LIST(covar_vector);
 
-    LinearRegressionRingElement operator+(const LinearRegressionRingElement &other) {
-        if (d != other.d) {
-            throw std::invalid_argument("Cannot add LinearRegressionRingElements with different dimensions");
-        }
+    return result;
+}
 
-        LinearRegressionRingElement result;
+    // LinearRegressionRingElement operator+(const LinearRegressionRingElement &other) {
+    //     if (d != other.d) {
+    //         throw std::invalid_argument("Cannot add LinearRegressionRingElements with different dimensions");
+    //     }
 
-        // Counts
-        result.count = count + other.count;
+    //     LinearRegressionRingElement result;
 
-        // Sums and covariance matrix
-        for (idx_t i = 0; i < d; i++) {
-            result.sums[i] = sums[i] + other.sums[i];
-            for (idx_t j = 0; j < d; j++) {
-                result.covar[i][j] = covar[i][j] + other.covar[i][j];
-            }
-        }
-        return result;
-    }
+    //     // Counts
+    //     result.count = count + other.count;
 
-    // HMMMMMM: return to this.
-    LinearRegressionRingElement operator*(const LinearRegressionRingElement &other) {
-        // Create covar matrix of combined features
-        LinearRegressionRingElement result(d + other.d);
+    //     // Sums and covariance matrix
+    //     for (idx_t i = 0; i < d; i++) {
+    //         result.sums[i] = sums[i] + other.sums[i];
+    //         for (idx_t j = 0; j < d; j++) {
+    //             result.covar[i][j] = covar[i][j] + other.covar[i][j];
+    //         }
+    //     }
+    //     return result;
+    // }
 
-        // Counts
-        result.count = count * other.count;
+    // // HMMMMMM: return to this.
+    // LinearRegressionRingElement operator*(const LinearRegressionRingElement &other) {
+    //     // Create covar matrix of combined features
+    //     LinearRegressionRingElement result(d + other.d);
 
-        // Sums 
-        for (idx_t i = 0; i < d; i++) {
-            result.sums[i] = other.sums[i] * count + sums[i] * other.count;
-        }
+    //     // Counts
+    //     result.count = count * other.count;
 
-        // Covariance matrix 
-        // See: https://www.youtube.com/watch?v=W6GrRmqvLyc&list=PL7dGmiBS0RtfVhhedAG7OzrL6nygjgGyn&index=3
-        for (idx_t i = 0; i < d; i++) {
-            for (idx_t j = 0; j < d; j++) {
-                result.covar[i][j] = (other.count * covar[i][j]) + (count * other.covar[i][j]) + (sums[i] * other.sums[j]) + (other.sums[i] * sums[j]);
-            }
-        }
-        return result;
-    }
+    //     // Sums 
+    //     for (idx_t i = 0; i < d; i++) {
+    //         result.sums[i] = other.sums[i] * count + sums[i] * other.count;
+    //     }
 
-    double getCount() {
-        return count;
-    }
+    //     // Covariance matrix 
+    //     // See: https://www.youtube.com/watch?v=W6GrRmqvLyc&list=PL7dGmiBS0RtfVhhedAG7OzrL6nygjgGyn&index=3
+    //     for (idx_t i = 0; i < d; i++) {
+    //         for (idx_t j = 0; j < d; j++) {
+    //             result.covar[i][j] = (other.count * covar[i][j]) + (count * other.covar[i][j]) + (sums[i] * other.sums[j]) + (other.sums[i] * sums[j]);
+    //         }
+    //     }
+    //     return result;
+    // }
 
-    std::vector<double>* getSums() {
-        return &sums;
-    }
+    // int getD() {
+    //     return d;
+    // }
 
-    std::vector<std::vector<double>>* getCovar() {
-        return &covar;
-    }
-};
+    // double getCount() {
+    //     return count;
+    // }
+
+    // std::vector<double>* getSums() {
+    //     return &sums;
+    // }
+
+    // std::vector<std::vector<double>>* getCovar() {
+    //     return &covar;
+    // }
 
 } // namespace quackml

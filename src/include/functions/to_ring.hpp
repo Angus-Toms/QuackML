@@ -4,7 +4,7 @@
 #define TO_RING_HPP
 
 #pragma once
-#include "../types/linear_reg_ring.cpp"
+#include "types/linear_reg_ring.hpp"
 
 #include "duckdb.hpp"
 #include "duckdb/function/function_set.hpp"

@@ -15,6 +15,8 @@
 #include "duckdb/planner/expression/bound_function_expression.hpp"
 #include "duckdb/common/types/vector.hpp"
 
+#include "types/linear_reg_ring.hpp"
+
 namespace quackml {
 
 struct LinearRegression {
