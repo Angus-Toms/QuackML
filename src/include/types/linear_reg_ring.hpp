@@ -37,6 +37,8 @@ public:
     duckdb::Value get_count() { return count; }
     duckdb::Value get_sums() { return sums; }
     duckdb::Value get_covar() { return covar; }
+
+    void Print();
 };
 
 } // namespace quackml

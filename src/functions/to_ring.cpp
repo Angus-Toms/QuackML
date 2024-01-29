@@ -2,6 +2,8 @@
 // to a single linear regression ring element. These elements can then be 
 // combined by the linear regression compute function.
 
+// TODO: Extract stuff to header file
+
 #include "functions/to_ring.hpp"
 
 namespace quackml {
@@ -29,9 +31,6 @@ struct ToRingFunction {
 };
 
 static void ToRingUpdate(duckdb::Vector inputs[], duckdb::AggregateInputData &, idx_t input_count, duckdb::Vector &state_vector, idx_t count) {
-    
-    std::cout << "ToRingUpdate\n";
-
     auto &features = inputs[0];
     duckdb::UnifiedVectorFormat features_data;
     features.ToUnifiedFormat(count, features_data);
@@ -48,17 +47,14 @@ static void ToRingUpdate(duckdb::Vector inputs[], duckdb::AggregateInputData &, 
             if (!state.ringElement) {
                 state.ringElement = new LinearRegressionRingElement(feature_vector.size());
             }
+
             auto tuple_ring = LinearRegressionRingElement(feature_vector);
-            auto ring_increment = *state.ringElement + tuple_ring;
-            state.ringElement = &ring_increment;
+            (*state.ringElement) = (*state.ringElement) + tuple_ring;
         }
     }
 }
 
 static void ToRingCombine(duckdb::Vector &state_vector, duckdb::Vector &combined, duckdb::AggregateInputData &, idx_t count) {
-    
-    std::cout << "ToRingCombine\n";
-    
     duckdb::UnifiedVectorFormat sdata;
     state_vector.ToUnifiedFormat(count, sdata);
     auto states_ptr = (ToRingState **)sdata.data;
@@ -70,26 +66,29 @@ static void ToRingCombine(duckdb::Vector &state_vector, duckdb::Vector &combined
     }
 }
 
-static void ToRingFinalize(duckdb::Vector &state_vector, duckdb::AggregateInputData &, duckdb::Vector &result, idx_t count, idx_t offset) {
-    
-    std::cout << "ToRingFinalize\n";
-    
+static void ToRingFinalize(duckdb::Vector &state_vector, duckdb::AggregateInputData &, duckdb::Vector &result, idx_t count, idx_t offset) {    
     duckdb::UnifiedVectorFormat sdata;
     state_vector.ToUnifiedFormat(count, sdata);
     auto states = (ToRingState **)sdata.data;
+    auto old_len = duckdb::ListVector::GetListSize(result);
 
     for (idx_t i = 0; i < count; i++) {
+        const auto rid = i + offset;
         auto &state = *states[sdata.sel->get_index(i)];
 
-        // Add count 
-        duckdb::ListVector::PushBack(result, state.ringElement->get_count());
-        duckdb::ListVector::PushBack(result, state.ringElement->get_sums());
+        duckdb::ListVector::PushBack(result, duckdb::Value::LIST({duckdb::Value::LIST({state.ringElement->get_count()})}));
+        duckdb::ListVector::PushBack(result, duckdb::Value::LIST({state.ringElement->get_sums()}));
         duckdb::ListVector::PushBack(result, state.ringElement->get_covar());
+
+        auto list_struct_data = duckdb::ListVector::GetData(result);
+        list_struct_data[rid].length = duckdb::ListVector::GetListSize(result) - old_len;
+        list_struct_data[rid].offset = old_len;
+        old_len += list_struct_data[rid].length;
     }
 }
 
 duckdb::unique_ptr<duckdb::FunctionData> ToRingBind(duckdb::ClientContext &context, duckdb::AggregateFunction &function, duckdb::vector<duckdb::unique_ptr<duckdb::Expression>> &arguments) {
-    auto list_type = duckdb::LogicalType::LIST(duckdb::LogicalType::ANY);
+    auto list_type = duckdb::LogicalType::LIST(duckdb::LogicalType::LIST(duckdb::LogicalType::LIST(duckdb::LogicalType::DOUBLE)));
     function.return_type = list_type;
     return duckdb::make_uniq<duckdb::VariableReturnBindData>(function.return_type);
 }
