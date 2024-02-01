@@ -1,6 +1,6 @@
 // UDAF to perform regularised linear regression 
-// TODO: Debug group by clauses 
-// TODO: Debug issue with seg faults from multiple calls to same table - destroy function not working?
+// MUNGO TODO: Debug group by clauses 
+// MUNGO TODO: Debug issue with seg faults from multiple calls to same table - destroy function not working?
 
 #include "functions/linear_reg.hpp"
 
@@ -134,8 +134,7 @@ static void LinearRegressionUpdate(duckdb::Vector inputs[], duckdb::AggregateInp
         if (feature_data.validity.RowIsValid(feature_data.sel->get_index(i)) && label_data.validity.RowIsValid(label_data.sel->get_index(i))) {
             auto &state = *states[sdata.sel->get_index(i)];
             auto feature_vector = duckdb::ListValue::GetChildren(feature.GetValue(i));
-            auto d = feature_vector.size();
-            state.d = d;
+            state.d = feature_vector.size();
 
             state.alpha = duckdb::UnifiedVectorFormat::GetData<double>(alpha_data)[alpha_data.sel->get_index(i)];
             state.lambda = duckdb::UnifiedVectorFormat::GetData<double>(lambda_data)[lambda_data.sel->get_index(i)];
@@ -147,18 +146,18 @@ static void LinearRegressionUpdate(duckdb::Vector inputs[], duckdb::AggregateInp
                 // If sigma is empty, c will be also so only one check needed
                 state.sigma = new std::vector<std::vector<double>>();
                 state.c = new std::vector<std::vector<double>>();
-                for (idx_t j = 0; j < d; j++) {
-                    state.sigma->push_back(std::vector<double>(d, 0));
+                for (idx_t j = 0; j < state.d; j++) {
+                    state.sigma->push_back(std::vector<double>(state.d, 0));
                     state.c->push_back(std::vector<double>(1, 0));
                 }
             }
 
             // Update sigma, c
             // TODO: Only need to calculate upper triangle
-            for (idx_t j = 0; j < d; j++) {
+            for (idx_t j = 0; j < state.d; j++) {
                 auto feature_j = feature_vector[j].GetValue<double>();
                 (*state.c)[j][0] += feature_j * label_value;
-                for (idx_t k = 0; k < d; k++) {
+                for (idx_t k = 0; k < state.d; k++) {
                     (*state.sigma)[j][k] += feature_j * feature_vector[k].GetValue<double>();
                 }
             }
@@ -239,10 +238,10 @@ duckdb::unique_ptr<duckdb::FunctionData> LinearRegressionBind(duckdb::ClientCont
 duckdb::AggregateFunction GetLinearRegressionFunction() {
     auto arg_types = duckdb::vector<duckdb::LogicalType>{
         duckdb::LogicalType::LIST(duckdb::LogicalType::DOUBLE), // features
-        duckdb::LogicalType::DOUBLE, // label
-        duckdb::LogicalType::DOUBLE, // alpha
-        duckdb::LogicalType::DOUBLE, // lambda
-        duckdb::LogicalType::INTEGER // iterations
+        duckdb::LogicalType::DOUBLE,                            // label
+        duckdb::LogicalType::DOUBLE,                            // alpha
+        duckdb::LogicalType::DOUBLE,                            // lambda
+        duckdb::LogicalType::INTEGER                            // iterations
     };
 
     return duckdb::AggregateFunction(

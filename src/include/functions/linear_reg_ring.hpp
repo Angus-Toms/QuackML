@@ -1,10 +1,9 @@
-// linear_reg.hpp
+// linear_reg_ring.hpp
 
-#ifndef LINEAR_REG_HPP
-#define LINEAR_REG_HPP
+#ifndef LINEAR_REG_RING_FUNCTION_HPP 
+#define LINEAR_REG_RING_FUNCTION_HPP
 
 #pragma once 
-// MUNGO TODO: check if all includes are necessary
 #include "duckdb.hpp"
 #include "duckdb/function/function_set.hpp"
 #include "duckdb/parser/parsed_data/create_aggregate_function_info.hpp"
@@ -19,10 +18,10 @@
 
 namespace quackml {
 
-struct LinearRegression {
+struct LinearRegressionRing {
     static void RegisterFunction(duckdb::Connection &conn, duckdb::Catalog &catalog);
 };
 
 } // namespace quackml
 
-#endif // LINEAR_REG_HPP
+#endif // LINEAR_REG_RING_FUNCTION_HPP

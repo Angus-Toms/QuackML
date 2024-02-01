@@ -20,6 +20,7 @@ set(EXTENSION_SOURCES
   src/functions/sum_count.cpp
   src/functions/linear_reg.cpp
   src/functions/to_ring.cpp
+  src/functions/linear_reg_ring.cpp
   src/types/linear_reg_ring.cpp)
 
 build_static_extension(${TARGET_NAME} ${EXTENSION_SOURCES})

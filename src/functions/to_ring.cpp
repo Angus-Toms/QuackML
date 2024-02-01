@@ -32,6 +32,7 @@ struct ToRingFunction {
 
 static void ToRingUpdate(duckdb::Vector inputs[], duckdb::AggregateInputData &, idx_t input_count, duckdb::Vector &state_vector, idx_t count) {
     auto &features = inputs[0];
+    auto &labels = inputs[1];
     duckdb::UnifiedVectorFormat features_data;
     features.ToUnifiedFormat(count, features_data);
 
@@ -45,11 +46,11 @@ static void ToRingUpdate(duckdb::Vector inputs[], duckdb::AggregateInputData &, 
             auto feature_vector = duckdb::ListValue::GetChildren(features.GetValue(i));
 
             if (!state.ringElement) {
-                state.ringElement = new LinearRegressionRingElement(feature_vector.size());
+                state.ringElement = new LinearRegressionRingElement(feature_vector);
+            } else {
+                auto tuple_ring = LinearRegressionRingElement(feature_vector);
+                (*state.ringElement) = (*state.ringElement) + tuple_ring;
             }
-
-            auto tuple_ring = LinearRegressionRingElement(feature_vector);
-            (*state.ringElement) = (*state.ringElement) + tuple_ring;
         }
     }
 }
@@ -76,8 +77,9 @@ static void ToRingFinalize(duckdb::Vector &state_vector, duckdb::AggregateInputD
         const auto rid = i + offset;
         auto &state = *states[sdata.sel->get_index(i)];
 
-        duckdb::ListVector::PushBack(result, duckdb::Value::LIST({duckdb::Value::LIST({state.ringElement->get_count()})}));
-        duckdb::ListVector::PushBack(result, duckdb::Value::LIST({state.ringElement->get_sums()}));
+        // Wrap count and sums to be matrix so result list members are off a uniform type
+        duckdb::ListVector::PushBack(result, state.ringElement->get_count_wrapped());
+        duckdb::ListVector::PushBack(result, state.ringElement->get_sums_wrapped());
         duckdb::ListVector::PushBack(result, state.ringElement->get_covar());
 
         auto list_struct_data = duckdb::ListVector::GetData(result);
@@ -88,14 +90,14 @@ static void ToRingFinalize(duckdb::Vector &state_vector, duckdb::AggregateInputD
 }
 
 duckdb::unique_ptr<duckdb::FunctionData> ToRingBind(duckdb::ClientContext &context, duckdb::AggregateFunction &function, duckdb::vector<duckdb::unique_ptr<duckdb::Expression>> &arguments) {
-    auto list_type = duckdb::LogicalType::LIST(duckdb::LogicalType::LIST(duckdb::LogicalType::LIST(duckdb::LogicalType::DOUBLE)));
-    function.return_type = list_type;
+    function.return_type = LinearRegressionRingType;
     return duckdb::make_uniq<duckdb::VariableReturnBindData>(function.return_type);
 }
 
 duckdb::AggregateFunction GetToRingFunction() {
     auto arg_types = duckdb::vector<duckdb::LogicalType>{
-        duckdb::LogicalType::LIST(duckdb::LogicalType::DOUBLE) // features
+        duckdb::LogicalType::LIST(duckdb::LogicalType::DOUBLE), // features
+        duckdb::LogicalType::DOUBLE                             // label     
     };
 
     return duckdb::AggregateFunction(
