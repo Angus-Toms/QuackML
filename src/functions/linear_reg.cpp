@@ -78,6 +78,8 @@ struct LinearRegressionState {
     idx_t count;
     idx_t d;
 
+    std::chrono::time_point<std::chrono::high_resolution_clock> start_time;
+
     std::vector<std::vector<double>> *sigma;
     std::vector<std::vector<double>> *c;
     std::vector<std::vector<double>> *theta;
@@ -90,6 +92,8 @@ struct LinearRegressionState {
 struct LinearRegressionFunction {
     template <class STATE>
     static void Initialize(STATE &state) {
+        state.start_time = std::chrono::high_resolution_clock::now();
+
         state.count = 0;
 
         state.alpha = 0.01;
@@ -107,7 +111,9 @@ struct LinearRegressionFunction {
 };
 
 static void LinearRegressionUpdate(duckdb::Vector inputs[], duckdb::AggregateInputData &, idx_t input_count, duckdb::Vector &state_vector, idx_t count) {
-    auto start_time = std::chrono::high_resolution_clock::now();
+
+    std::cout << "Update called\n";
+
     auto &feature = inputs[0];
     auto &label = inputs[1];
     auto &alpha = inputs[2];
@@ -164,12 +170,12 @@ static void LinearRegressionUpdate(duckdb::Vector inputs[], duckdb::AggregateInp
             state.count++;
         }
     }
-    auto end_time = std::chrono::high_resolution_clock::now();
-    auto duration = std::chrono::duration_cast<std::chrono::milliseconds>(end_time - start_time);
-    std::cout << "Time taken: " << duration.count() << "ms\n";
 }
 
 static void LinearRegressionCombine(duckdb::Vector &state_vector, duckdb::Vector &combined, duckdb::AggregateInputData &, idx_t count) {
+
+    std::cout << "Combined called\n";
+
     duckdb::UnifiedVectorFormat sdata;
     state_vector.ToUnifiedFormat(count, sdata);
     auto states_ptr = (LinearRegressionState **)sdata.data;
@@ -191,6 +197,9 @@ static void LinearRegressionCombine(duckdb::Vector &state_vector, duckdb::Vector
 }
 
 static void LinearRegressionFinalize(duckdb::Vector &state_vector, duckdb::AggregateInputData &, duckdb::Vector &result, idx_t count, idx_t offset) {
+
+    std::cout << "Finalize called\n";
+
     duckdb::UnifiedVectorFormat sdata;
     state_vector.ToUnifiedFormat(count, sdata);
     auto states = (LinearRegressionState **)sdata.data;
@@ -227,6 +236,8 @@ static void LinearRegressionFinalize(duckdb::Vector &state_vector, duckdb::Aggre
         old_len += list_struct_data[rid].length;
     }
     result.Verify(count);
+    auto end_time = std::chrono::high_resolution_clock::now();
+    std::cout << "Time taken: " << std::chrono::duration_cast<std::chrono::microseconds>(end_time - states[sdata.sel->get_index(0)]->start_time).count() << "ms\n";
 }
 
 duckdb::unique_ptr<duckdb::FunctionData> LinearRegressionBind(duckdb::ClientContext &context, duckdb::AggregateFunction &function, duckdb::vector<duckdb::unique_ptr<duckdb::Expression>> &arguments) {
