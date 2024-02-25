@@ -18,7 +18,26 @@
 // OpenSSL linked through vcpkg
 #include <openssl/opensslv.h>
 
+#include <iostream>
+
 namespace duckdb {
+
+void run_quackml_tests(DuckDB &db) {
+    std::cout << " <=========== Running QuackML tests ===========>\n";
+
+    Connection con(db);
+
+    // MUNGO TODO: Linear regression tests 
+    con.Query("CREATE TABLE t (features INTEGER[], label INTEGER);");
+    con.Query("INSERT INTO t VALUES ([1, 2], -4), ([3, 1], 3), ([4, 5], -7);"); // y = 2x_1 - 3x_2
+    con.Query("SELECT * FROM t;")->Print();
+    con.Query("SELECT linear_regression(features, label, 0.01, 0, 500) AS linear_regression FROM t")->Print();
+
+    // MUNGO TODO: Linear regression ring tests
+
+    std::cout << " <========== QuackML tests complete ==========>\n";
+}
+
 
 void QuackmlExtension::Load(DuckDB &db) {
 	Connection con(db);
@@ -32,7 +51,12 @@ void QuackmlExtension::Load(DuckDB &db) {
     quackml::LinearRegressionRing::RegisterFunction(con, catalog);
 
     con.Commit();
+
+    #ifdef QUACKML_TESTS
+        run_quackml_tests(db);
+    #endif
 }
+
 std::string QuackmlExtension::Name() {
 	return "QuackML";
 }

@@ -107,7 +107,7 @@ static void LinearRegressionRingFinalize(duckdb::Vector &state_vector, duckdb::A
     auto state = *states[sdata.sel->get_index(0)];
     auto &mask = duckdb::FlatVector::Validity(result);
     auto old_len = duckdb::ListVector::GetListSize(result);
-
+                                                                                
     for (idx_t i = 0; i < count; i++) {
         const auto rid = i + offset;
 
@@ -120,9 +120,9 @@ static void LinearRegressionRingFinalize(duckdb::Vector &state_vector, duckdb::A
         for (idx_t j = 0; j < state.iterations; j++) {
             // TODO: Convert state.ring to std::vector 
             // TODO: Create c 
-            //auto gradient = getGradientND(*state.ring, *state.c, *state.theta, state.lambda);
-            //matrixScalarMultiply(gradient, state.alpha, gradient);
-            //matrixSubtract(*state.theta, gradient, *state.theta);
+            // auto gradient = getGradientND(*state.ring, *state.c, *state.theta, state.lambda);
+            // matrixScalarMultiply(gradient, state.alpha, gradient);
+            // matrixSubtract(*state.theta, gradient, *state.theta);
             auto hello = 0;
             std::cout << "GD iteration " << j << "\n";
         }
