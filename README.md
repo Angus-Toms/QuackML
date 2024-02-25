@@ -33,17 +33,3 @@ SELECT linear_regression(features, label, 0.1, 0, 1000) as linear_regression FRO
 │ [2.0000000000, 1.0000000000]  │
 └───────────────────────────────┘
 ```
-
-## Testing
-Tests for the QuackML system are located in the `src/quackml_extension.cpp` file in the method `run_quackml_tests`. 
-Feel free to modify or add to these tests.
-This is **NOT** the intended way to distribute and test a DuckDB extension but allows usage while avoiding the costs of hosting the 
-extension on S3. You can start the tests by running
-```bash
-make quackml_tests 
-```
-from the project directory. Tests will then be run when the extension is loaded upon the first SQL query 
-``` SQL
-; 
-<=========== Running QuackML tests ===========>
-```
