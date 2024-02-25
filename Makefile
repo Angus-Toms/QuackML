@@ -62,10 +62,15 @@ release:
 	cmake $(GENERATOR) $(BUILD_FLAGS)  $(CLIENT_FLAGS)  -DCMAKE_BUILD_TYPE=Release -S ./duckdb/ -B build/release && \
 	cmake --build build/release --config Release
 
-quackml_tests:
+quackml_tests: quackml_build execute 
+
+quackml_build:
 	mkdir -p build/release && \
 	cmake -DQUACKML_TESTS=ON $(GENERATOR) $(BUILD_FLAGS)  $(CLIENT_FLAGS)  -DCMAKE_BUILD_TYPE=Release -S ./duckdb/ -B build/release && \
 	cmake --build build/release --config Release
+
+execute:
+	./build/release/duckdb
 
 
 ##### Client build

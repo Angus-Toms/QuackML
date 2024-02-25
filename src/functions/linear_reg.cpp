@@ -9,10 +9,30 @@
 #include <chrono>
 #include <iostream>
 #include <vector>
+#include <cmath>
 using std::vector;
 using std::to_string;
 
 namespace quackml {
+
+double gradientNorm(std::vector<std::vector<double>> &matrix) {
+    double sum = 0;
+    for (auto row : matrix) {
+        sum += row[0] * row[0];
+    }
+    return std::sqrt(sum);
+}
+
+void printMatrix(std::vector<std::vector<double>> &matrix) {
+    // Debugging tool
+    for (auto row : matrix) {
+        for (auto element : row) {
+            std::cout << element << ", ";
+        }
+        std::cout << "\n";
+    }
+    std::cout << "\n";
+};
 
 void matrixScalarMultiply(std::vector<std::vector<double>> &matrix, float scalar, std::vector<std::vector<double>> &result) {
     // Multiply each element of a matrix by a scalar
@@ -83,9 +103,7 @@ struct LinearRegressionState {
     std::vector<std::vector<double>> *c;
     std::vector<std::vector<double>> *theta;
 
-    double alpha;
     double lambda;
-    idx_t iterations;
 };
 
 struct LinearRegressionFunction {
@@ -97,9 +115,7 @@ struct LinearRegressionFunction {
         state.c = nullptr;
         state.theta = nullptr;
 
-        state.alpha = 0.01;
         state.lambda = 0.0;
-        state.iterations = 1000;
     }
 
     template <class STATE>
@@ -116,61 +132,47 @@ static void LinearRegressionUpdate(duckdb::Vector inputs[], duckdb::AggregateInp
 
     auto &feature = inputs[0];
     auto &label = inputs[1];
-    auto &alpha = inputs[2];
-    auto &lambda = inputs[3];
-    auto &iterations = inputs[4];
-
+    auto &lambda = inputs[2];
     duckdb::UnifiedVectorFormat feature_data;
     duckdb::UnifiedVectorFormat label_data;
-    duckdb::UnifiedVectorFormat alpha_data;
     duckdb::UnifiedVectorFormat lambda_data;
-    duckdb::UnifiedVectorFormat iterations_data;
+    duckdb::UnifiedVectorFormat sdata;
 
     feature.ToUnifiedFormat(count, feature_data);
     label.ToUnifiedFormat(count, label_data);
-    alpha.ToUnifiedFormat(count, alpha_data);
     lambda.ToUnifiedFormat(count, lambda_data);
-    iterations.ToUnifiedFormat(count, iterations_data);
-
-    duckdb::UnifiedVectorFormat sdata;
     state_vector.ToUnifiedFormat(count, sdata);
     auto states = (LinearRegressionState **)sdata.data;
 
     for (idx_t i = 0; i < count; i++) {
-        std::cout << "Processing row: " << i << "\n";
+        //std::cout << "Processing row: " << i << "\n";
         if (feature_data.validity.RowIsValid(feature_data.sel->get_index(i)) && label_data.validity.RowIsValid(label_data.sel->get_index(i))) {
             auto &state = *states[sdata.sel->get_index(i)];
             auto feature_vector = duckdb::ListValue::GetChildren(feature.GetValue(i));
+            feature_vector.push_back(duckdb::Value::DOUBLE(1)); // Add bias term
             state.d = feature_vector.size();
-
-            state.alpha = duckdb::UnifiedVectorFormat::GetData<double>(alpha_data)[alpha_data.sel->get_index(i)];
             state.lambda = duckdb::UnifiedVectorFormat::GetData<double>(lambda_data)[lambda_data.sel->get_index(i)];
-            state.iterations = duckdb::UnifiedVectorFormat::GetData<int>(iterations_data)[iterations_data.sel->get_index(i)];
             auto label_value = duckdb::UnifiedVectorFormat::GetData<double>(label_data)[label_data.sel->get_index(i)];
 
             // Initialise sigma, c if empty
             if (!state.sigma) {
-                std::cout << "Instantiating sigma for state: " << &state << "\n";
                 // If sigma is empty, c will be also so only one check needed
                 state.sigma = new std::vector<std::vector<double>>();
                 state.c = new std::vector<std::vector<double>>();
+                // Add extra row/column to account for bias term
                 for (idx_t j = 0; j < state.d; j++) {
                     state.sigma->push_back(std::vector<double>(state.d, 0));
                     state.c->push_back(std::vector<double>(1, 0));
                 }
-            } else {
-                std::cout << "Sigma already exists for state " << &state << "\n";
             }
 
             // Update sigma, c
-            std::cout << "Updating sigma and c\n";
             for (idx_t j = 0; j < state.d; j++) {
                 auto feature_j = feature_vector[j].GetValue<double>();
                 (*state.c)[j][0] += feature_j * label_value;
                 for (idx_t k = j; k < state.d; k++) {
-                    auto feature_product = feature_j * feature_vector[k].GetValue<double>();
-                    (*state.sigma)[j][k] = feature_product;
-                    (*state.sigma)[k][j] = feature_product;
+                    (*state.sigma)[j][k] += feature_j * feature_vector[k].GetValue<double>();
+                    (*state.sigma)[k][j] = (*state.sigma)[j][k];
                 }
             }
             state.count++;
@@ -186,17 +188,17 @@ static void LinearRegressionCombine(duckdb::Vector &state_vector, duckdb::Vector
     auto states_ptr = (LinearRegressionState **)sdata.data;
     auto combined_ptr = duckdb::FlatVector::GetData<LinearRegressionState *>(combined);
 
+    // MUNGO TODO: How does bias term affect this?
+    // Also is this complete, sigma and c arent being combined
     for (idx_t i = 0; i < count; i++) {
         auto &state = *states_ptr[sdata.sel->get_index(i)];
         if (!combined_ptr[i]->sigma) {
-            //std::cout << "Instantiating sigma for state: " << &state << "\n";
             combined_ptr[i]->sigma = new std::vector<std::vector<double>>(state.d, std::vector<double>(state.d, 0));
             combined_ptr[i]->c = new std::vector<std::vector<double>>(state.d, std::vector<double>(1, 0));
         }
-        
-        combined_ptr[i]->alpha = state.alpha;
+        combined_ptr[i]->count += state.count;
+        combined_ptr[i]->d = state.d;
         combined_ptr[i]->lambda = state.lambda;
-        combined_ptr[i]->iterations = state.iterations;
     }
 }
 
@@ -212,37 +214,41 @@ static void LinearRegressionFinalize(duckdb::Vector &state_vector, duckdb::Aggre
     for (idx_t i = 0; i < count; i++) {
         const auto rid = i + offset;
         auto &state = *states[sdata.sel->get_index(i)];
-        
+
         // Instantiate theta if not already
         if (!state.theta) {
-            std::cout << "Instantiating theta for state: " << &state << "\n";
             state.theta = new std::vector<std::vector<double>>(state.d, std::vector<double>(1, 0.0));
-        } else {
-            std::cout << "Theta already exists for state " << &state << "\n";
         }
 
-        // Gradient descent
-        for (idx_t j = 0; j < state.iterations; j++) {
+        // MUNGO TODO: Rewrite old GD routine
+        // Test GD routine and see how much time learning rate decay and convergence testing saves
+        // Also linear algebra libraries? (if time)
+
+        // Convergence parameters
+        auto max_iterations = 10000;
+        idx_t iter = 0;
+        double convergence_threshold = 1e-5;
+
+        // Learning rate parameters
+        double initial_learning_rate = 0.1;
+        double decay_rate = 0.9; 
+        double decay_steps = 100; 
+
+        while (iter < max_iterations) {
             auto gradient = getGradientND(*state.sigma, *state.c, *state.theta, state.lambda);
-            // learning_rate * gradient 
-            matrixScalarMultiply(gradient, state.alpha, gradient);
+            if (gradientNorm(gradient) < convergence_threshold) { break; }
+            double learning_rate = initial_learning_rate * pow(decay_rate, iter / decay_steps);
+            // learning_rate * gradient
+            matrixScalarMultiply(gradient, learning_rate, gradient);
             // theta -= (learning_rate * gradient)
             matrixSubtract(*state.theta, gradient, *state.theta);
+            iter++;
         }
 
-        std::cout << "GD performed\n";
-
-        // Create weight result pairs
-        // for (idx_t j = 0; j < state.d; j++) {
-        //     auto theta_value = duckdb::Value::CreateValue((*state.theta)[j][0]);
-        //     auto key = "theta_" + std::to_string(j);
-        //     auto theta_pair = duckdb::Value::STRUCT({std::make_pair("key", key), std::make_pair("value", theta_value)});
-        //     duckdb::ListVector::PushBack(result, theta_pair);
-        // }
+        std::cout << "GD performed in " << iter << " iterations\n";
 
         // Create result vector 
         for (idx_t j = 0; j < state.d; j++) {
-            std::cout << "Pushing back theta value: " << (*state.theta)[j][0] << "\n";
             auto theta_value = duckdb::Value::CreateValue((*state.theta)[j][0]);
             duckdb::ListVector::PushBack(result, theta_value);
         }
@@ -265,9 +271,7 @@ duckdb::AggregateFunction GetLinearRegressionFunction() {
     auto arg_types = duckdb::vector<duckdb::LogicalType>{
         duckdb::LogicalType::LIST(duckdb::LogicalType::DOUBLE), // features
         duckdb::LogicalType::DOUBLE,                            // label
-        duckdb::LogicalType::DOUBLE,                            // alpha
-        duckdb::LogicalType::DOUBLE,                            // lambda
-        duckdb::LogicalType::INTEGER                            // iterations
+        duckdb::LogicalType::DOUBLE                             // lambda
     };
 
     return duckdb::AggregateFunction(
