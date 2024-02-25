@@ -23,7 +23,7 @@
 namespace duckdb {
 
 void run_quackml_tests(DuckDB &db) {
-    std::cout << " <=========== Running QuackML tests ===========>\n";
+    std::cout << "<=========== Running QuackML tests ===========>\n";
 
     Connection con(db);
 
@@ -35,7 +35,7 @@ void run_quackml_tests(DuckDB &db) {
 
     // MUNGO TODO: Linear regression ring tests
 
-    std::cout << " <========== QuackML tests complete ==========>\n";
+    std::cout << "<========== QuackML tests complete ==========>\n";
 }
 
 

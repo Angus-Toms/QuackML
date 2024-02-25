@@ -42,4 +42,8 @@ extension on S3. You can start the tests by running
 ```bash
 make quackml_tests 
 ```
-from the project directory.
+from the project directory. Tests will then be run when the extension is loaded upon the first SQL query 
+``` SQL
+; 
+<=========== Running QuackML tests ===========>
+```
