@@ -1,0 +1,14 @@
+# name: test/sql/linear_regression.test
+# description: test linear regression function
+# group: [quackml]
+
+require quackml
+
+# Test 1: Check linear regression results
+query I
+CREATE TABLE t (features INTEGER[], label INTEGER);
+INSERT INTO t VALUES ([3, 5], 13), ([7, 3], 13), ([1, 4], 9);
+SELECT linear_regression(features, label, 0.01, 0, 1000) AS regression_result FROM t;
+----
+1
+2
