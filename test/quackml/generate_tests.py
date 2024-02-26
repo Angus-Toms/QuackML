@@ -21,11 +21,11 @@ def generate_test_set(fname: str, n: int) -> None:
             f.write(f"{list(feat)}\t{label}\n")
 
 if __name__ == "__main__":
-    generate_test_set('test/quackml/test_100.csv', 100)
-    generate_test_set('test/quackml/test_1000.csv', 1000)
-    generate_test_set('test/quackml/test_10000.csv', 10000)
-    generate_test_set('test/quackml/test_100000.csv', 100000)
-    generate_test_set('test/quackml/test_1000000.csv', 1000000)
+    generate_test_set('test/quackml/test_100.tsv', 100)
+    generate_test_set('test/quackml/test_1000.tsv', 1000)
+    generate_test_set('test/quackml/test_10000.tsv', 10000)
+    generate_test_set('test/quackml/test_100000.tsv', 100000)
+    generate_test_set('test/quackml/test_1000000.tsv', 1000000)
 
     if os.path.exists("test/quackml/weights.txt"):
         os.remove("test/quackml/weights.txt")

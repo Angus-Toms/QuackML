@@ -28,9 +28,8 @@ void run_quackml_tests(DuckDB &db) {
     Connection con(db);
 
     // MUNGO TODO: Linear regression tests 
+    con.Query("CREATE TABLE csv AS SELECT * FROM read_csv('test/quackml/test_1000000.tsv', header = TRUE, delim = '\t', columns = {'features': 'DOUBLE[]', 'label': 'DOUBLE'});");
     auto start_time = std::chrono::high_resolution_clock::now();
-    
-    con.Query("CREATE TABLE csv AS SELECT * FROM read_csv('test/quackml/test_1000000.csv', header = TRUE, delim = '\t', columns = {'features': 'DOUBLE[]', 'label': 'DOUBLE'});");
     con.Query("SELECT linear_regression(features, label, 0) as linear_regression FROM csv;")->Print();
     auto end_time = std::chrono::high_resolution_clock::now();
     std::cout << "Linear regression time: " << std::chrono::duration_cast<std::chrono::milliseconds>(end_time - start_time).count() << "ms\n";

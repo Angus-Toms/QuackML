@@ -2,8 +2,6 @@
 // MUNGO TODO: Debug group by clauses 
 // MUNGO TODO: Debug issue with seg faults from multiple calls to same table - destroy function not working?
 // Think issue is calling multiple linear regressions with different hyperparameters?
-// MUNGO TODO: Debug combine function
-
 #include "functions/linear_reg.hpp"
 
 #include <chrono>
@@ -188,18 +186,25 @@ static void LinearRegressionCombine(duckdb::Vector &state_vector, duckdb::Vector
     auto states_ptr = (LinearRegressionState **)sdata.data;
     auto combined_ptr = duckdb::FlatVector::GetData<LinearRegressionState *>(combined);
 
-    // MUNGO TODO: How does bias term affect this?
-    // Also is this complete, sigma and c arent being combined
     for (idx_t i = 0; i < count; i++) {
-        auto &state = *states_ptr[sdata.sel->get_index(i)];
+        auto &state = *states_ptr[sdata.sel->get_index(i)]; 
+        if (!state.sigma) {
+            continue;
+        }
+
         if (!combined_ptr[i]->sigma) {
             combined_ptr[i]->sigma = new std::vector<std::vector<double>>(state.d, std::vector<double>(state.d, 0));
             combined_ptr[i]->c = new std::vector<std::vector<double>>(state.d, std::vector<double>(1, 0));
         }
+
+        matrixAdd(*state.sigma, *combined_ptr[i]->sigma, *combined_ptr[i]->sigma);
+        matrixAdd(*state.c, *combined_ptr[i]->c, *combined_ptr[i]->c);
+
         combined_ptr[i]->count += state.count;
         combined_ptr[i]->d = state.d;
         combined_ptr[i]->lambda = state.lambda;
     }
+
 }
 
 static void LinearRegressionFinalize(duckdb::Vector &state_vector, duckdb::AggregateInputData &, duckdb::Vector &result, idx_t count, idx_t offset) {
