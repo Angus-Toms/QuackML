@@ -16,7 +16,7 @@ from the project directory and then build with the unsigned flag
 ```bash 
 ./build/release/duckdb -unsigned
 ```
-This laucnhes the DuckDB CLI tool, then load the extension by running:
+This launches the DuckDB CLI tool, then load the extension by running:
 ```SQL 
 LOAD 'extension/quackml/quackml.duckdb_extension';
 ```
