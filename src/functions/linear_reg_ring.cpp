@@ -8,31 +8,25 @@ namespace quackml {
 
 struct LinearRegressionRingState {
     idx_t count;
+    double lambda;
 
     LinearRegressionRingElement *ring;
     std::vector<std::vector<double>> *theta;
-
-    double alpha;
-    double lambda;
-    idx_t iterations;
 };
 
 struct LinearRegressionRingFunction {
     template <class STATE>
     static void Initialize(STATE &state) {
         state.count = 0;
+        state.lambda = 0;
 
         state.ring = nullptr;
         state.theta = nullptr;
-
-        state.alpha = 0;
-        state.lambda = 0;
-        state.iterations = 0;
     }
 
     template <class STATE>
     static void Destroy(STATE &state, duckdb::AggregateInputData &aggr_input_data) {
-
+        // MUNGO TODO: Implement
     }
 
     static bool IgnoreNull() {
@@ -42,25 +36,16 @@ struct LinearRegressionRingFunction {
 
 static void LinearRegressionRingUpdate(duckdb::Vector inputs[], duckdb::AggregateInputData &, idx_t input_count, duckdb::Vector &state_vector, idx_t count) {
     auto &rings = inputs[0];
-    auto &labels = inputs[1];
-    auto &alpha = inputs[2];
-    auto &lambda = inputs[3];
-    auto &iterations = inputs[4];
+    auto &lambda = inputs[1];
 
     duckdb::UnifiedVectorFormat rings_data;
-    duckdb::UnifiedVectorFormat labels_data;
-    duckdb::UnifiedVectorFormat alpha_data;
     duckdb::UnifiedVectorFormat lambda_data;
-    duckdb::UnifiedVectorFormat iterations_data;
+    duckdb::UnifiedVectorFormat sdata;
 
     rings.ToUnifiedFormat(count, rings_data);
-    labels.ToUnifiedFormat(count, labels_data);
-    alpha.ToUnifiedFormat(count, alpha_data);
     lambda.ToUnifiedFormat(count, lambda_data);
-    iterations.ToUnifiedFormat(count, iterations_data);
-
-    duckdb::UnifiedVectorFormat sdata;
     state_vector.ToUnifiedFormat(count, sdata);
+
     // MUNGO TODO: Support for GROUP BY clauses
     auto states = (LinearRegressionRingState **)sdata.data;
     auto state = *states[sdata.sel->get_index(0)];
@@ -74,9 +59,7 @@ static void LinearRegressionRingUpdate(duckdb::Vector inputs[], duckdb::Aggregat
         if (!state.ring) {
             // Initialize ring and model hyperparameters if not already 
             state.ring = ring;
-            state.alpha = duckdb::UnifiedVectorFormat::GetData<double>(alpha_data)[alpha_data.sel->get_index(i)];
             state.lambda = duckdb::UnifiedVectorFormat::GetData<double>(lambda_data)[lambda_data.sel->get_index(i)];
-            state.iterations = duckdb::UnifiedVectorFormat::GetData<idx_t>(iterations_data)[iterations_data.sel->get_index(i)];
         } else {
             // Add padding to state 
             auto state_d = state.ring->get_d();
@@ -117,7 +100,7 @@ static void LinearRegressionRingFinalize(duckdb::Vector &state_vector, duckdb::A
         }
 
         // Gradient descent 
-        for (idx_t j = 0; j < state.iterations; j++) {
+        for (idx_t j = 0; j < 10000; j++) {
             // TODO: Convert state.ring to std::vector 
             // TODO: Create c 
             // auto gradient = getGradientND(*state.ring, *state.c, *state.theta, state.lambda);
@@ -135,7 +118,6 @@ static void LinearRegressionRingFinalize(duckdb::Vector &state_vector, duckdb::A
             duckdb::ListVector::PushBack(result, theta_value);
         }
 
-        // Weird stuff
         auto list_struct_data = duckdb::ListVector::GetData(result);
         list_struct_data[rid].length = duckdb::ListVector::GetListSize(result) - old_len;
         list_struct_data[rid].offset = old_len;
@@ -153,10 +135,7 @@ duckdb::unique_ptr<duckdb::FunctionData> LinearRegressionRingBind(duckdb::Client
 duckdb::AggregateFunction GetLinearRegressionRingFunction() {
     auto arg_types = duckdb::vector<duckdb::LogicalType>{
         duckdb::LogicalType::LIST(LinearRegressionRingType),    // list of rings
-        duckdb::LogicalType::DOUBLE,                            // label 
-        duckdb::LogicalType::DOUBLE,                            // alpha
-        duckdb::LogicalType::DOUBLE,                            // lambda
-        duckdb::LogicalType::BIGINT                             // iterations
+        duckdb::LogicalType::DOUBLE                             // lambda
     };
 
     return duckdb::AggregateFunction(

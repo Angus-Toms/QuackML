@@ -32,16 +32,23 @@ LinearRegressionRingElement::LinearRegressionRingElement(idx_t d_arg, bool addit
 // Constructor used in to_ring function
 LinearRegressionRingElement::LinearRegressionRingElement(duckdb::vector<duckdb::Value> features) {
     d = features.size();
-    
     count = duckdb::Value::DOUBLE(1);
-
     sums = duckdb::Value::LIST(features);
+
+    // auto covar_vector = duckdb::vector<duckdb::Value>(d);
+    // for (idx_t i = 0; i < d; i++) {
+    //     auto row = duckdb::vector<duckdb::Value>(d, duckdb::Value::DOUBLE(0));
+    //     auto feature_value = features[i].GetValue<double>();
+    //     row[i] = duckdb::Value::DOUBLE(feature_value * feature_value);
+    //     covar_vector[i] = duckdb::Value::LIST(row);
+    // }
 
     auto covar_vector = duckdb::vector<duckdb::Value>(d);
     for (idx_t i = 0; i < d; i++) {
         auto row = duckdb::vector<duckdb::Value>(d, duckdb::Value::DOUBLE(0));
-        auto feature_value = features[i].GetValue<double>();
-        row[i] = duckdb::Value::DOUBLE(feature_value * feature_value);
+        for (idx_t j = 0; j < d; j++) {
+            row[j] = duckdb::Value::DOUBLE(features[i].GetValue<double>() * features[j].GetValue<double>());
+        }
         covar_vector[i] = duckdb::Value::LIST(row);
     }
     covar = duckdb::Value::LIST(covar_vector);
@@ -95,6 +102,8 @@ LinearRegressionRingElement LinearRegressionRingElement::operator+(const LinearR
 }
 
 LinearRegressionRingElement LinearRegressionRingElement::operator*(const LinearRegressionRingElement &other) {
+    // MUNGO TODO: Add bias term at this stage? 
+    // Or add durign finalize routine?
     if (d != other.d) {
         throw std::invalid_argument("Cannot multiply LinearRegressionRingElements with different dimensions");
     }

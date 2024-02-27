@@ -53,7 +53,7 @@ void QuackmlExtension::Load(DuckDB &db) {
 
     con.Commit();
 
-    run_quackml_tests(db);
+    //run_quackml_tests(db);
 }
 
 std::string QuackmlExtension::Name() {

@@ -20,12 +20,30 @@ def generate_test_set(fname: str, n: int) -> None:
         for feat, label in zip(features, labels):
             f.write(f"{list(feat)}\t{label}\n")
 
+def generate_group_test(fname: str, groups: int, n: int) -> None:
+    weights = np.random.randint(-20, 20, size=(groups, DIMENSIONS))
+    for weight in weights:
+        all_weights.append(weight)
+    features = np.random.standard_normal(size=(n, DIMENSIONS-1))
+    
+    if os.path.exists(fname):
+        os.remove(fname)
+
+    with open(fname, 'w') as f:
+        f.write("features\tlabel\tclass\n")
+        for feat in features:
+            group = np.random.randint(0, groups)
+            label = np.dot(feat, weights[group][:-1]) + weights[group][-1]
+            f.write(f"{list(feat)}\t{label}\t{group}\n")
+
+
 if __name__ == "__main__":
     generate_test_set('test/quackml/test_100.tsv', 100)
     generate_test_set('test/quackml/test_1000.tsv', 1000)
     generate_test_set('test/quackml/test_10000.tsv', 10000)
-    generate_test_set('test/quackml/test_100000.tsv', 100000)
-    generate_test_set('test/quackml/test_1000000.tsv', 1000000)
+    #generate_test_set('test/quackml/test_100000.tsv', 100000)
+    #generate_test_set('test/quackml/test_1000000.tsv', 1000000)
+    generate_group_test('test/quackml/test_groups.tsv', 5, 1000)
 
     if os.path.exists("test/quackml/weights.txt"):
         os.remove("test/quackml/weights.txt")

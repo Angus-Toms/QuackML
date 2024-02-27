@@ -32,7 +32,6 @@ struct ToRingFunction {
 
 static void ToRingUpdate(duckdb::Vector inputs[], duckdb::AggregateInputData &, idx_t input_count, duckdb::Vector &state_vector, idx_t count) {
     auto &features = inputs[0];
-    auto &labels = inputs[1];
     duckdb::UnifiedVectorFormat features_data;
     features.ToUnifiedFormat(count, features_data);
 
@@ -63,6 +62,11 @@ static void ToRingCombine(duckdb::Vector &state_vector, duckdb::Vector &combined
 
     for (idx_t i = 0; i < count; i++) {
         auto &state = *states_ptr[sdata.sel->get_index(i)];
+        if (!state.ringElement) {
+            continue;
+        }
+
+        // MUNGO TODO: Instantiate blank ring elemnt if needed?
         *(combined_ptr[i]->ringElement) = *(combined_ptr[i]->ringElement) + *state.ringElement;
     }
 }
@@ -96,8 +100,7 @@ duckdb::unique_ptr<duckdb::FunctionData> ToRingBind(duckdb::ClientContext &conte
 
 duckdb::AggregateFunction GetToRingFunction() {
     auto arg_types = duckdb::vector<duckdb::LogicalType>{
-        duckdb::LogicalType::LIST(duckdb::LogicalType::DOUBLE), // features
-        duckdb::LogicalType::DOUBLE                             // label     
+        duckdb::LogicalType::LIST(duckdb::LogicalType::DOUBLE) // features 
     };
 
     return duckdb::AggregateFunction(
