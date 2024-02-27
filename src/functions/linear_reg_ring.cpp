@@ -1,5 +1,6 @@
 #include "functions/linear_reg_ring.hpp"
 
+// MUNGO TODO: Extract GD routine? Probably not worth the time
 // Testing:
 #include <chrono>
 #include <iostream>
@@ -48,14 +49,13 @@ static void LinearRegressionRingUpdate(duckdb::Vector inputs[], duckdb::Aggregat
 
     // MUNGO TODO: Support for GROUP BY clauses
     auto states = (LinearRegressionRingState **)sdata.data;
-    auto state = *states[sdata.sel->get_index(0)];
+    auto &state = *states[sdata.sel->get_index(0)];
 
     auto ring_children = duckdb::ListValue::GetChildren(rings.GetValue(0));
     auto ring_count = ring_children.size();
 
     for (idx_t i = 0; i < ring_count; i++) {
         auto ring = new LinearRegressionRingElement(ring_children[i]);
-
         if (!state.ring) {
             // Initialize ring and model hyperparameters if not already 
             state.ring = ring;
@@ -64,14 +64,12 @@ static void LinearRegressionRingUpdate(duckdb::Vector inputs[], duckdb::Aggregat
             // Add padding to state 
             auto state_d = state.ring->get_d();
             auto ring_d = ring->get_d();
-
             state.ring->pad_lower(ring_d);
             ring->pad_upper(state_d);
 
             // Update state 
             auto new_ring = (*state.ring) * (*ring);
             state.ring = &new_ring;
-
             state.ring->Print();
         }
     }
@@ -87,27 +85,50 @@ static void LinearRegressionRingFinalize(duckdb::Vector &state_vector, duckdb::A
     duckdb::UnifiedVectorFormat sdata;
     state_vector.ToUnifiedFormat(count, sdata);
     auto states = (LinearRegressionRingState **)sdata.data;
-    auto state = *states[sdata.sel->get_index(0)];
+    auto &state = *states[sdata.sel->get_index(0)];
     auto &mask = duckdb::FlatVector::Validity(result);
     auto old_len = duckdb::ListVector::GetListSize(result);
+
+    std::cout << "Preprocessing done\n";
                                                                                 
     for (idx_t i = 0; i < count; i++) {
         const auto rid = i + offset;
+        auto d = 0;
 
         if (!state.theta) {
-            state.theta = new std::vector<std::vector<double>>(state.ring->get_d(), std::vector<double>(1, 0.0));
+            std::cout << "Initializing theta\n";
+            if (!state.ring) {
+                std::cout << "Ring not initialized\n";
+            }
+            d = state.ring->get_d();
+            std::cout << "d: " << d << "\n";
+            state.theta = new std::vector<std::vector<double>>(d, std::vector<double>(1, 0.0));
             std::cout << "theta initialized\n";
         }
+        // Slice C, sigma from covariance matrix
+        auto covariance = state.ring->get_covar();
+        auto covariance_children = duckdb::ListValue::GetChildren(covariance);
+        std::vector<std::vector<double>> c;
+        std::vector<std::vector<double>> sigma;
 
-        // Gradient descent 
-        for (idx_t j = 0; j < 10000; j++) {
-            // TODO: Convert state.ring to std::vector 
-            // TODO: Create c 
-            // auto gradient = getGradientND(*state.ring, *state.c, *state.theta, state.lambda);
-            // matrixScalarMultiply(gradient, state.alpha, gradient);
-            // matrixSubtract(*state.theta, gradient, *state.theta);
-            auto hello = 0;
-            std::cout << "GD iteration " << j << "\n";
+        // First row of covariance matrix contains c
+        auto c_row = duckdb::ListValue::GetChildren(covariance_children[0]);
+        c_row.erase(c_row.begin());
+
+        // START HERE. EXTRACT SIGMA FROM COVAR
+
+
+        // Convergence parameters
+        auto max_iterations = 10000;
+        idx_t iter = 0;
+        double convergence_threshold = 1e-5;
+
+        // Learning rate parameters
+        double initial_learning_rate = 0.1 / std::sqrt(state.count);
+        double decay_rate = 0.9; 
+        double decay_steps = 100; 
+        while (iter < max_iterations) {
+
         }
 
         std::cout << "GD done\n";
@@ -117,7 +138,7 @@ static void LinearRegressionRingFinalize(duckdb::Vector &state_vector, duckdb::A
             auto theta_value = duckdb::Value::CreateValue((*state.theta)[j][0]);
             duckdb::ListVector::PushBack(result, theta_value);
         }
-
+        // Set size of result
         auto list_struct_data = duckdb::ListVector::GetData(result);
         list_struct_data[rid].length = duckdb::ListVector::GetListSize(result) - old_len;
         list_struct_data[rid].offset = old_len;

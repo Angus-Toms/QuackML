@@ -27,12 +27,18 @@ void run_quackml_tests(DuckDB &db) {
 
     Connection con(db);
 
-    // MUNGO TODO: Linear regression tests 
-    con.Query("CREATE TABLE csv AS SELECT * FROM read_csv('test/quackml/test_1000000.tsv', header = TRUE, delim = '\t', columns = {'features': 'DOUBLE[]', 'label': 'DOUBLE'});");
-    auto start_time = std::chrono::high_resolution_clock::now();
-    con.Query("SELECT linear_regression(features, label, 0) as linear_regression FROM csv;")->Print();
-    auto end_time = std::chrono::high_resolution_clock::now();
-    std::cout << "Linear regression time: " << std::chrono::duration_cast<std::chrono::milliseconds>(end_time - start_time).count() << "ms\n";
+    // Linear regression tests 
+    // con.Query("CREATE TABLE csv AS SELECT * FROM read_csv('test/quackml/test_1000000.tsv', header = TRUE, delim = '\t', columns = {'features': 'DOUBLE[]', 'label': 'DOUBLE'});");
+    // auto start_time = std::chrono::high_resolution_clock::now();
+    // con.Query("SELECT linear_regression(features, label, 0) as linear_regression FROM csv;")->Print();
+    // auto end_time = std::chrono::high_resolution_clock::now();
+    // std::cout << "Linear regression time: " << std::chrono::duration_cast<std::chrono::milliseconds>(end_time - start_time).count() << "ms\n";
+
+    con.Query("CREATE TABLE a (xa INTEGER[]);");
+    con.Query("INSERT INTO a VALUES ([1]), ([3]), ([-1]);");
+    con.Query("CREATE TABLE b (xb INTEGER[]);");
+    con.Query("INSERT INTO b VALUES ([7]), ([5]), ([3]);");
+    con.Query("SELECT linear_regression_ring([a_ring, b_ring], 0) FROM (SELECT to_ring(xa) a_ring FROM a), (SELECT to_ring(xb) b_ring FROM b);")->Print();
 
     // MUNGO TODO: Linear regression ring tests
 
@@ -53,7 +59,7 @@ void QuackmlExtension::Load(DuckDB &db) {
 
     con.Commit();
 
-    //run_quackml_tests(db);
+    run_quackml_tests(db);
 }
 
 std::string QuackmlExtension::Name() {

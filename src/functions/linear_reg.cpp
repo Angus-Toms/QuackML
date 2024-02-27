@@ -1,5 +1,4 @@
 // UDAF to perform regularised linear regression 
-// MUNGO TODO: Debug group by clauses 
 // MUNGO TODO: Debug issue with seg faults from multiple calls to same table - destroy function not working?
 // Think issue is calling multiple linear regressions with different hyperparameters?
 #include "functions/linear_reg.hpp"

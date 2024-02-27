@@ -25,7 +25,6 @@ private:
     idx_t d;
     duckdb::Value count;    // scalar
     duckdb::Value sums;     // column vector 
-    duckdb::Value c;        // column vector
     duckdb::Value covar;    // matrix
 
 public:
@@ -39,13 +38,10 @@ public:
     LinearRegressionRingElement operator+(const LinearRegressionRingElement &other);
     LinearRegressionRingElement operator*(const LinearRegressionRingElement &other);
 
-    void set_c(duckdb::Value c_arg) { c = c_arg; }
-
     idx_t get_d() { return d; }
     duckdb::Value get_count() { return count; }
     duckdb::Value get_sums() { return sums; }
     duckdb::Value get_covar() { return covar; }
-    duckdb::Value get_c() { return c; }
 
     // Wrapped accessors, make count and sums matrices to allow for uniform list type
     // covar is already a matrix so no new accessor needed
