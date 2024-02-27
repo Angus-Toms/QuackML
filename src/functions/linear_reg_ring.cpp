@@ -1,9 +1,8 @@
 #include "functions/linear_reg_ring.hpp"
+#include "functions/linear_reg_utils.hpp"
 
-// MUNGO TODO: Extract GD routine? Probably not worth the time
-// Testing:
 #include <chrono>
-#include <iostream>
+#include <cmath>
 
 namespace quackml {
 
@@ -71,6 +70,9 @@ static void LinearRegressionRingUpdate(duckdb::Vector inputs[], duckdb::Aggregat
             auto new_ring = (*state.ring) * (*ring);
             state.ring = &new_ring;
             state.ring->Print();
+
+            std::cout << "Combined ring dimensions: " << state.ring->get_d() << "\n";
+            std::cout << "Combined ring address:" << state.ring << "\n";
         }
     }
 }
@@ -95,11 +97,10 @@ static void LinearRegressionRingFinalize(duckdb::Vector &state_vector, duckdb::A
         const auto rid = i + offset;
         auto d = 0;
 
+        std::cout << "Finalize ring address: " << state.ring << "\n";
+
         if (!state.theta) {
             std::cout << "Initializing theta\n";
-            if (!state.ring) {
-                std::cout << "Ring not initialized\n";
-            }
             d = state.ring->get_d();
             std::cout << "d: " << d << "\n";
             state.theta = new std::vector<std::vector<double>>(d, std::vector<double>(1, 0.0));
@@ -107,16 +108,41 @@ static void LinearRegressionRingFinalize(duckdb::Vector &state_vector, duckdb::A
         }
         // Slice C, sigma from covariance matrix
         auto covariance = state.ring->get_covar();
+
         auto covariance_children = duckdb::ListValue::GetChildren(covariance);
         std::vector<std::vector<double>> c;
         std::vector<std::vector<double>> sigma;
 
         // First row of covariance matrix contains c
-        auto c_row = duckdb::ListValue::GetChildren(covariance_children[0]);
-        c_row.erase(c_row.begin());
+        auto covar_row = duckdb::ListValue::GetChildren(covariance_children[0]);
+        for (idx_t i = 1; i < d; i++) {
+            c.push_back({covar_row[i].GetValue<double>()});
+        }
 
-        // START HERE. EXTRACT SIGMA FROM COVAR
+        // Extract sigma
+        for (idx_t i = 1; i < d; i++) {
+            auto sigma_row = duckdb::ListValue::GetChildren(covariance_children[i]);
+            std::vector<double> sigma_row_vec;
+            sigma_row.erase(sigma_row.begin());
+            for (auto &sigma_val : sigma_row) {
+                sigma_row_vec.push_back(sigma_val.GetValue<double>());
+            }
+        }
 
+        std::cout << "C:\n";
+        for (auto &row : c) {
+            for (auto &col : row) {
+                std::cout << col << " ";
+            }
+            std::cout << "\n";
+        }
+        std::cout << "Sigma:\n";
+        for (auto &row : sigma) {
+            for (auto &col : row) {
+                std::cout << col << " ";
+            }
+            std::cout << "\n";
+        }
 
         // Convergence parameters
         auto max_iterations = 10000;
@@ -127,11 +153,19 @@ static void LinearRegressionRingFinalize(duckdb::Vector &state_vector, duckdb::A
         double initial_learning_rate = 0.1 / std::sqrt(state.count);
         double decay_rate = 0.9; 
         double decay_steps = 100; 
-        while (iter < max_iterations) {
 
+        while (iter < max_iterations) {
+            auto gradient = getGradientND(sigma, c, *state.theta, state.lambda);
+            if (gradientNorm(gradient) < convergence_threshold) { break; }
+            double learning_rate = initial_learning_rate * pow(decay_rate, iter / decay_steps);
+            // learning_rate * gradient 
+            matrixScalarMultiply(gradient, learning_rate, gradient);
+            // theta -= (learning_rate * gradient)
+            matrixSubtract(*state.theta, gradient, *state.theta);
+            iter++;
         }
 
-        std::cout << "GD done\n";
+        std::cout << "GD performed in " << iter << " iterations\n";
 
         // Create weight result list 
         for (idx_t j = 0; j < state.theta->size(); j++) {

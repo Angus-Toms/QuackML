@@ -103,7 +103,7 @@ LinearRegressionRingElement LinearRegressionRingElement::operator+(const LinearR
 
 LinearRegressionRingElement LinearRegressionRingElement::operator*(const LinearRegressionRingElement &other) {
     // MUNGO TODO: Add bias term at this stage? 
-    // Or add durign finalize routine?
+    // Or add during finalize routine?
     if (d != other.d) {
         throw std::invalid_argument("Cannot multiply LinearRegressionRingElements with different dimensions");
     }
