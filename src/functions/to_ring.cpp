@@ -31,6 +31,7 @@ struct ToRingFunction {
 };
 
 static void ToRingUpdate(duckdb::Vector inputs[], duckdb::AggregateInputData &, idx_t input_count, duckdb::Vector &state_vector, idx_t count) {
+    std::cout << "ToRingUpdate called\n";
     auto &features = inputs[0];
     duckdb::UnifiedVectorFormat features_data;
     features.ToUnifiedFormat(count, features_data);
@@ -55,6 +56,7 @@ static void ToRingUpdate(duckdb::Vector inputs[], duckdb::AggregateInputData &, 
 }
 
 static void ToRingCombine(duckdb::Vector &state_vector, duckdb::Vector &combined, duckdb::AggregateInputData &, idx_t count) {
+    std::cout << "ToRingCombine called\n";
     duckdb::UnifiedVectorFormat sdata;
     state_vector.ToUnifiedFormat(count, sdata);
     auto states_ptr = (ToRingState **)sdata.data;
@@ -72,6 +74,7 @@ static void ToRingCombine(duckdb::Vector &state_vector, duckdb::Vector &combined
 }
 
 static void ToRingFinalize(duckdb::Vector &state_vector, duckdb::AggregateInputData &, duckdb::Vector &result, idx_t count, idx_t offset) {    
+    std::cout << "ToRingFinalize called\n";
     duckdb::UnifiedVectorFormat sdata;
     state_vector.ToUnifiedFormat(count, sdata);
     auto states = (ToRingState **)sdata.data;
@@ -81,10 +84,14 @@ static void ToRingFinalize(duckdb::Vector &state_vector, duckdb::AggregateInputD
         const auto rid = i + offset;
         auto &state = *states[sdata.sel->get_index(i)];
 
-        // Wrap count and sums to be matrix so result list members are off a uniform type
-        duckdb::ListVector::PushBack(result, state.ringElement->get_count_wrapped());
-        duckdb::ListVector::PushBack(result, state.ringElement->get_sums_wrapped());
-        duckdb::ListVector::PushBack(result, state.ringElement->get_covar());
+        std::cout << "Finalizing ring element\n";
+        // Wrap count and sums in matrices so result list members are off a uniform type
+        auto count_wrapped = duckdb::Value::LIST({duckdb::Value::LIST({*(state.ringElement->get_count())})});
+        auto sums_wrapped = duckdb::Value::LIST({*(state.ringElement->get_sums())});
+        duckdb::ListVector::PushBack(result, count_wrapped);
+        duckdb::ListVector::PushBack(result, sums_wrapped);
+        duckdb::ListVector::PushBack(result, *(state.ringElement->get_covar()));
+        std::cout << "Ring element finalized\n";
 
         auto list_struct_data = duckdb::ListVector::GetData(result);
         list_struct_data[rid].length = duckdb::ListVector::GetListSize(result) - old_len;

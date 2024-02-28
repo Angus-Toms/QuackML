@@ -56,15 +56,12 @@ static void LinearRegressionRingUpdate(duckdb::Vector inputs[], duckdb::Aggregat
     auto ring_count = ring_children.size();
 
     for (idx_t i = 0; i < ring_count; i++) {
-        std::cout << "Processing ring " << i << "\n";
         auto ring = new LinearRegressionRingElement(ring_children[i]);
         if (!state.ring) {
             // Initialize ring and model hyperparameters if not already 
-            std::cout << "Setting state ring to input ring\n";
             state.ring = ring;
             state.lambda = duckdb::UnifiedVectorFormat::GetData<double>(lambda_data)[lambda_data.sel->get_index(i)];
         } else {
-            std::cout << "Combining rings\n";
             // Add padding to state 
             auto state_d = state.ring->get_d();
             auto ring_d = ring->get_d();
@@ -73,13 +70,12 @@ static void LinearRegressionRingUpdate(duckdb::Vector inputs[], duckdb::Aggregat
 
             // Update state 
             auto new_ring = (*state.ring) * (*ring);
-            state.ring = &new_ring;
+            state.ring = &new_ring; // Could this be issue?
             state.ring->Print();
 
-            std::cout << "Combined ring dimensions: " << state.ring->get_d() << "\n";
             std::cout << "Combined ring address:" << state.ring << "\n";
-            std::cout << "After multiplication, covar matrix:\n";
-            for (auto &row : duckdb::ListValue::GetChildren(state.ring->get_covar())) {
+            std::cout << "After multiplication, covar address: " << state.ring->get_covar() << "\n";
+            for (auto &row : duckdb::ListValue::GetChildren(*(state.ring->get_covar()))) {
                 for (auto &col : duckdb::ListValue::GetChildren(row)) {
                     std::cout << col.GetValue<double>() << " ";
                 }
@@ -103,41 +99,42 @@ static void LinearRegressionRingFinalize(duckdb::Vector &state_vector, duckdb::A
     auto &mask = duckdb::FlatVector::Validity(result);
     auto old_len = duckdb::ListVector::GetListSize(result);
 
-    // START HERE: ISSUE WITH COVAR MATRIX BEING EMPTY. Line 130 seems to be causing issues
-
     for (idx_t i = 0; i < count; i++) {
         const auto rid = i + offset;
         auto d = 0;
         auto &state = *states[sdata.sel->get_index(i)];
-        std::cout << "Finalize ring address: " << state.ring << "\n";
+        auto ring = state.ring;
+        std::cout << "Finalize ring address: " << ring << "\n";
 
         if (!state.theta) {
-            d = state.ring->get_d();
+            d = ring->get_d();
             std::cout << "Ring d: " << d << "\n";
             state.theta = new std::vector<std::vector<double>>(d, std::vector<double>(1, 0.0));
         }
+
         // Slice C, sigma from covariance matrix
-        auto covariance = state.ring->get_covar();
-        // Print covariance matrix
-        std::cout << "Printing covariance matrix:\n";
-        for (auto &row : duckdb::ListValue::GetChildren(covariance)) {
-            for (auto &col : duckdb::ListValue::GetChildren(row)) {
+        auto covariance = ring->get_covar();
+        std::cout << "Covar address: " << covariance << "\n";
+        std::cout << "Printing covar:\n";
+        for (auto row : duckdb::ListValue::GetChildren(*covariance)) {
+            for (auto col : duckdb::ListValue::GetChildren(row)) {
                 std::cout << col.GetValue<double>() << " ";
             }
             std::cout << "\n";
         }
+        std::cout << "Covar printed\n";
 
-       auto covariance_children = duckdb::ListValue::GetChildren(covariance);
+        auto covariance_children = duckdb::ListValue::GetChildren(*covariance);
         
         std::vector<std::vector<double>> c;
         std::vector<std::vector<double>> sigma;
 
         // First row of covariance matrix contains c
         std::cout << "Extracting C, sigma\n";
-        // auto covar_row = duckdb::ListValue::GetChildren(covariance_children[0]);
-        // for (idx_t i = 1; i < d; i++) {
-        //     c.push_back({covar_row[i].GetValue<double>()});
-        // }
+        auto covar_row = duckdb::ListValue::GetChildren(covariance_children[0]);
+        for (idx_t i = 1; i < d; i++) {
+            c.push_back({covar_row[i].GetValue<double>()});
+        }
         std::cout << "C extracted\n";
         printMatrix(c);
 

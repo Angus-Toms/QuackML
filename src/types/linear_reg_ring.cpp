@@ -3,6 +3,7 @@
 #include <iostream>
 #include <stdexcept>    
 
+// MUNGO TODO: Remove some of these constructors
 // ASSUMPTIONS:
 // We assume that each input relation contains labels
 // All relation feature-lists are disjoint 
@@ -14,9 +15,9 @@ LinearRegressionRingElement::LinearRegressionRingElement() {}
 // Create a d-dimensional ring element, assert additive identity to make 
 // element the additive identity, multiplicative identity otherwise
 LinearRegressionRingElement::LinearRegressionRingElement(idx_t d_arg, bool additive_identity) {
-    d = d_arg;
+    set_d(d_arg);
 
-    count = additive_identity ? duckdb::Value::DOUBLE(0) : duckdb::Value::DOUBLE(1);
+    auto count_value = additive_identity ? duckdb::Value::DOUBLE(0) : duckdb::Value::DOUBLE(1);
     auto sum_vector = duckdb::vector<duckdb::Value>(d, duckdb::Value::DOUBLE(0));
 
     auto covar_vector = duckdb::vector<duckdb::Value>(d);
@@ -24,24 +25,18 @@ LinearRegressionRingElement::LinearRegressionRingElement(idx_t d_arg, bool addit
         auto row = duckdb::vector<duckdb::Value>(d, duckdb::Value::DOUBLE(0));
         covar_vector[i] = duckdb::Value::LIST(row);
     }
-    sums = duckdb::Value::LIST(sum_vector);
-    covar = duckdb::Value::LIST(covar_vector);
+    auto sums_value = duckdb::Value::LIST(sum_vector);
+    auto covar_value = duckdb::Value::LIST(covar_vector);
+
+    set_count(count_value);
+    set_sums(sums_value);
+    set_covar(covar_value);
 }
-
-
 // Constructor used in to_ring function
 LinearRegressionRingElement::LinearRegressionRingElement(duckdb::vector<duckdb::Value> features) {
-    d = features.size();
-    count = duckdb::Value::DOUBLE(1);
-    sums = duckdb::Value::LIST(features);
-
-    // auto covar_vector = duckdb::vector<duckdb::Value>(d);
-    // for (idx_t i = 0; i < d; i++) {
-    //     auto row = duckdb::vector<duckdb::Value>(d, duckdb::Value::DOUBLE(0));
-    //     auto feature_value = features[i].GetValue<double>();
-    //     row[i] = duckdb::Value::DOUBLE(feature_value * feature_value);
-    //     covar_vector[i] = duckdb::Value::LIST(row);
-    // }
+    auto d_value = features.size();
+    auto count_value = duckdb::Value::DOUBLE(1);
+    auto sums_value = duckdb::Value::LIST(features);
 
     auto covar_vector = duckdb::vector<duckdb::Value>(d);
     for (idx_t i = 0; i < d; i++) {
@@ -51,7 +46,12 @@ LinearRegressionRingElement::LinearRegressionRingElement(duckdb::vector<duckdb::
         }
         covar_vector[i] = duckdb::Value::LIST(row);
     }
-    covar = duckdb::Value::LIST(covar_vector);
+    auto covar_value = duckdb::Value::LIST(covar_vector);
+
+    set_d(d);
+    set_count(count_value);
+    set_sums(sums_value);
+    set_covar(covar_value);
 }
 // Constructor used in linear_regression_ring function. Values are loaded from to_ring 
 // subqueries so returned as 3D duckdb::LIST 
@@ -59,10 +59,15 @@ LinearRegressionRingElement::LinearRegressionRingElement(duckdb::Value ring) {
     auto ring_children = duckdb::ListValue::GetChildren(ring);
 
     // Unwrap "matrix-ified" count and sums
-    count = duckdb::ListValue::GetChildren(duckdb::ListValue::GetChildren(ring_children[0])[0])[0];
-    sums = duckdb::ListValue::GetChildren(ring_children[1])[0];
-    covar = ring_children[2];
-    d = duckdb::ListValue::GetChildren(sums).size();
+    auto count_value = duckdb::ListValue::GetChildren(duckdb::ListValue::GetChildren(ring_children[0])[0])[0];
+    auto sums_value = duckdb::ListValue::GetChildren(ring_children[1])[0];
+    auto covar_value = ring_children[2];
+    auto d = duckdb::ListValue::GetChildren(sums).size();
+
+    set_d(d);
+    set_count(count_value);
+    set_sums(sums_value);
+    set_covar(covar_value);
 }
 
 LinearRegressionRingElement::~LinearRegressionRingElement() {}
@@ -71,8 +76,8 @@ LinearRegressionRingElement LinearRegressionRingElement::operator+(const LinearR
     if (d != other.d) {
         throw std::invalid_argument("Cannot add LinearRegressionRingElements with different dimensions");
     }
-    LinearRegressionRingElement result(d, true);
-    result.count = duckdb::Value::DOUBLE(count.GetValue<double>() + other.count.GetValue<double>());
+    LinearRegressionRingElement result = *(new LinearRegressionRingElement(d, true));
+    auto count_value = duckdb::Value::DOUBLE(count.GetValue<double>() + other.count.GetValue<double>());
 
     // Sums 
     duckdb::vector<duckdb::Value> sums_vector(d);
@@ -95,31 +100,32 @@ LinearRegressionRingElement LinearRegressionRingElement::operator+(const LinearR
         covar_vector[i] = duckdb::Value::LIST(row);
     }
 
-    result.sums = duckdb::Value::LIST(sums_vector);
-    result.covar = duckdb::Value::LIST(covar_vector);
+    auto sum_value = duckdb::Value::LIST(sums_vector);
+    auto covar_value = duckdb::Value::LIST(covar_vector);
 
+    result.set_count(count_value);
+    result.set_sums(sum_value);
+    result.set_covar(covar_value);
     return result;
 }
 
 LinearRegressionRingElement LinearRegressionRingElement::operator*(const LinearRegressionRingElement &other) {
-    // MUNGO TODO: Add bias term at this stage? 
-    // Or add during finalize routine?
     if (d != other.d) {
         throw std::invalid_argument("Cannot multiply LinearRegressionRingElements with different dimensions");
     }
-    LinearRegressionRingElement result(d, true);
+    LinearRegressionRingElement result = *(new LinearRegressionRingElement(d, true));
     
     // Count
     double count_val = count.GetValue<double>();
     double other_count_val = other.count.GetValue<double>();
-    result.count = duckdb::Value::DOUBLE(count_val * other_count_val);
+    auto count_value = duckdb::Value::DOUBLE(count_val * other_count_val);
 
     // Sums and Covariance
     duckdb::vector<duckdb::Value> sums_vector(d);
     duckdb::vector<duckdb::Value> covar_vector(d);
-    auto sum_children = duckdb::ListValue::GetChildren(sums);
+    auto sum_children = duckdb::ListValue::GetChildren(*get_sums());
     auto other_sum_children = duckdb::ListValue::GetChildren(other.sums);
-    auto covar_children = duckdb::ListValue::GetChildren(covar);
+    auto covar_children = duckdb::ListValue::GetChildren(*get_covar());
     auto other_covar_children = duckdb::ListValue::GetChildren(other.covar);
 
     for (idx_t i = 0; i < d; i++) {
@@ -141,9 +147,12 @@ LinearRegressionRingElement LinearRegressionRingElement::operator*(const LinearR
         }
         covar_vector[i] = duckdb::Value::LIST(row);
     }
-    result.sums = duckdb::Value::LIST(sums_vector);
-    result.covar = duckdb::Value::LIST(covar_vector);
+    auto sums_value = duckdb::Value::LIST(sums_vector);
+    auto covar_value = duckdb::Value::LIST(covar_vector);
 
+    result.set_count(count_value);
+    result.set_sums(sums_value);
+    result.set_covar(covar_value);
     return result;
 }
 

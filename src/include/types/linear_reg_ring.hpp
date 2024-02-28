@@ -15,6 +15,8 @@
 #include "duckdb/planner/expression/bound_function_expression.hpp"
 #include "duckdb/common/vector.hpp"
 
+#include "duckdb/common/types/value.hpp"
+
 namespace quackml {
 
 const duckdb::LogicalType MatrixType = duckdb::LogicalType::LIST(duckdb::LogicalType::LIST(duckdb::LogicalType::DOUBLE));
@@ -39,14 +41,14 @@ public:
     LinearRegressionRingElement operator*(const LinearRegressionRingElement &other);
 
     idx_t get_d() { return d; }
-    duckdb::Value get_count() { return count; }
-    duckdb::Value get_sums() { return sums; }
-    duckdb::Value get_covar() { return covar; }
+    duckdb::Value* get_count() { return &count; }
+    duckdb::Value* get_sums() { return &sums; }
+    duckdb::Value* get_covar() { return &covar; }
 
-    // Wrapped accessors, make count and sums matrices to allow for uniform list type
-    // covar is already a matrix so no new accessor needed
-    duckdb::Value get_count_wrapped() { return duckdb::Value::LIST({duckdb::Value::LIST({count})}); }
-    duckdb::Value get_sums_wrapped() { return duckdb::Value::LIST({sums}); }
+    void set_d(idx_t d) { this->d = d; }
+    void set_count(const duckdb::Value &count) { this->count = count; }
+    void set_sums(const duckdb::Value &sums) { this->sums = sums; }
+    void set_covar(const duckdb::Value &covar) { this->covar = covar; }
 
     // Padding - add rows and columns of 0s to top left or bottom right of covariance matrix
     void pad_upper(idx_t d_inc);
