@@ -35,9 +35,10 @@ void run_quackml_tests(DuckDB &db) {
     // std::cout << "Linear regression time: " << std::chrono::duration_cast<std::chrono::milliseconds>(end_time - start_time).count() << "ms\n";
 
     con.Query("CREATE TABLE a (xa INTEGER[]);");
-    con.Query("INSERT INTO a VALUES ([1]), ([3]), ([-1]);");
+    con.Query("INSERT INTO a VALUES ([-1]), ([-6]), ([3]);");
     con.Query("CREATE TABLE b (xb INTEGER[]);");
-    con.Query("INSERT INTO b VALUES ([7, 7]), ([5, 5]), ([3, 3]);");
+    // y = 2x_0 - 3x_1
+    con.Query("INSERT INTO b VALUES ([1, 1]), ([0, 2]), ([3, 1]);");
     con.Query("SELECT linear_regression_ring([a_ring, b_ring], 0) FROM (SELECT to_ring(xa) a_ring FROM a), (SELECT to_ring(xb) b_ring FROM b);")->Print();
 
     // MUNGO TODO: Linear regression ring tests

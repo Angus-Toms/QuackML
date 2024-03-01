@@ -4,6 +4,9 @@
 #include <chrono>
 #include <cmath>
 
+// MUNGO TODO: Add bias term and issues with state dimensions if we're removing 
+// one row of labels
+
 namespace quackml {
 
 struct LinearRegressionRingState {
@@ -102,6 +105,7 @@ static void LinearRegressionRingUpdate(duckdb::Vector inputs[], duckdb::Aggregat
         auto ring = new LinearRegressionRingElement(rings[i]);
         if (!state.ring) {
             state.ring = ring;
+            state.lambda = duckdb::UnifiedVectorFormat::GetData<double>(lambda_data)[lambda_data.sel->get_index(i)];
         } else {
             // Padding rings, state ring must always be left operand 
             auto state_d = state.ring->get_d();
@@ -111,8 +115,6 @@ static void LinearRegressionRingUpdate(duckdb::Vector inputs[], duckdb::Aggregat
 
             // Multiply rings, use copy constructor to dynamically allocate object 
             auto combined = new LinearRegressionRingElement((*state.ring) * (*ring));
-            combined->Print();
-            // Taking address of temp object?
             state.ring = combined;
         }
     }   
@@ -234,10 +236,87 @@ static void LinearRegressionRingFinalize(duckdb::Vector &state_vector, duckdb::A
     // }
     // result.Verify(count);
     std::cout << "LinearRegressionRingFinalize called\n";
+
+    duckdb::UnifiedVectorFormat sdata;
+    state_vector.ToUnifiedFormat(count, sdata);
+    auto states = (LinearRegressionRingState **)sdata.data;
+    auto &mask = duckdb::FlatVector::Validity(result);
+    auto old_len = duckdb::ListVector::GetListSize(result);
+
+    for (idx_t i = 0; i < count; i++) {
+        auto rid = i + offset;
+
+        auto &state = *states[sdata.sel->get_index(i)];
+        auto ring = state.ring;
+        auto d = ring->get_d();
+
+        // Instantiate theta if not already 
+        if (!state.theta) {
+            state.theta = new std::vector<std::vector<double>>(d-1, std::vector<double>(1, 0.0));
+        }
+        
+        // Extract Sigma, C 
+        std::vector<std::vector<double>> sigma;
+        std::vector<std::vector<double>> c;
+
+        auto covar = ring->get_covar();
+        auto covar_children = duckdb::ListValue::GetChildren(*covar);
+        auto covar_first_row = duckdb::ListValue::GetChildren(covar_children[0]);
+
+        for (idx_t i = 1; i < d; i++) {
+            c.push_back({covar_first_row[i].GetValue<double>()});
+            auto row_children = duckdb::ListValue::GetChildren(covar_children[i]);
+            std::vector<double> row_vec;
+            for (idx_t j = 1; j < d; j++) {
+                row_vec.push_back(row_children[j].GetValue<double>());
+            }
+            sigma.push_back(row_vec);
+        }
+
+        printMatrix(c);
+        printMatrix(sigma);
+
+        // Gradient descent
+        // Convergence parameters
+        auto max_iterations = 10000;
+        idx_t iter = 0;
+        double convergence_threshold = 1e-5;
+
+        // Learning rate parameters
+        double initial_learning_rate = 0.1;
+        double decay_rate = 0.9; 
+        double decay_steps = 100; 
+
+        std::cout << "Starting GD\n";
+
+        while (iter < max_iterations) {
+            auto gradient = getGradientND(sigma, c, *state.theta, state.lambda);
+            if (gradientNorm(gradient) < convergence_threshold) { break; }
+            double learning_rate = initial_learning_rate * pow(decay_rate, iter / decay_steps);
+            // learning_rate * gradient
+            matrixScalarMultiply(gradient, learning_rate, gradient);
+            // theta -= (learning_rate * gradient)
+            matrixSubtract(*state.theta, gradient, *state.theta);
+            iter++;
+        }
+        std::cout << "GD performed in " << iter << " iterations\n";
+
+        // Create result vector
+        for (idx_t j = 0; j < d-1; j++) {
+            auto theta_value = duckdb::Value::CreateValue((*state.theta)[j][0]);
+            duckdb::ListVector::PushBack(result, theta_value);
+        }
+
+        // Set result list size 
+        auto list_struct_data = duckdb::ListVector::GetData(result);
+        list_struct_data[rid].length = duckdb::ListVector::GetListSize(result) - old_len;
+        list_struct_data[rid].offset = old_len;
+        old_len += list_struct_data[rid].length;
+    }
 }
 
 duckdb::unique_ptr<duckdb::FunctionData> LinearRegressionRingBind(duckdb::ClientContext &context, duckdb::AggregateFunction &function, duckdb::vector<duckdb::unique_ptr<duckdb::Expression>> &arguments) {
-    auto list_type = duckdb::LogicalType::LIST(LinearRegressionRingType);
+    auto list_type = duckdb::LogicalType::LIST(duckdb::LogicalType::DOUBLE);
     function.return_type = list_type;
     return duckdb::make_uniq<duckdb::VariableReturnBindData>(function.return_type);
 }
