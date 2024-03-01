@@ -12,6 +12,13 @@
 namespace quackml {
 
 LinearRegressionRingElement::LinearRegressionRingElement() {}
+// Copy constructor
+LinearRegressionRingElement::LinearRegressionRingElement(const LinearRegressionRingElement &other) {
+    d = other.d;
+    count = other.count;
+    sums = other.sums;
+    covar = other.covar;
+}
 // Create a d-dimensional ring element, assert additive identity to make 
 // element the additive identity, multiplicative identity otherwise
 LinearRegressionRingElement::LinearRegressionRingElement(idx_t d_arg, bool additive_identity) {
@@ -34,7 +41,8 @@ LinearRegressionRingElement::LinearRegressionRingElement(idx_t d_arg, bool addit
 }
 // Constructor used in to_ring function
 LinearRegressionRingElement::LinearRegressionRingElement(duckdb::vector<duckdb::Value> features) {
-    auto d_value = features.size();
+    auto d_value = features.size(); 
+    set_d(d_value);
     auto count_value = duckdb::Value::DOUBLE(1);
     auto sums_value = duckdb::Value::LIST(features);
 
@@ -48,7 +56,6 @@ LinearRegressionRingElement::LinearRegressionRingElement(duckdb::vector<duckdb::
     }
     auto covar_value = duckdb::Value::LIST(covar_vector);
 
-    set_d(d);
     set_count(count_value);
     set_sums(sums_value);
     set_covar(covar_value);
@@ -57,19 +64,17 @@ LinearRegressionRingElement::LinearRegressionRingElement(duckdb::vector<duckdb::
 // subqueries so returned as 3D duckdb::LIST 
 LinearRegressionRingElement::LinearRegressionRingElement(duckdb::Value ring) {
     auto ring_children = duckdb::ListValue::GetChildren(ring);
-
     // Unwrap "matrix-ified" count and sums
     auto count_value = duckdb::ListValue::GetChildren(duckdb::ListValue::GetChildren(ring_children[0])[0])[0];
     auto sums_value = duckdb::ListValue::GetChildren(ring_children[1])[0];
     auto covar_value = ring_children[2];
-    auto d = duckdb::ListValue::GetChildren(sums).size();
+    auto d = duckdb::ListValue::GetChildren(sums_value).size();
 
     set_d(d);
     set_count(count_value);
     set_sums(sums_value);
     set_covar(covar_value);
 }
-
 LinearRegressionRingElement::~LinearRegressionRingElement() {}
 
 LinearRegressionRingElement LinearRegressionRingElement::operator+(const LinearRegressionRingElement &other) {

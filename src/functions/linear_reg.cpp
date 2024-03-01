@@ -57,7 +57,6 @@ static void LinearRegressionUpdate(duckdb::Vector inputs[], duckdb::AggregateInp
     auto states = (LinearRegressionState **)sdata.data;
 
     for (idx_t i = 0; i < count; i++) {
-        //std::cout << "Processing row: " << i << "\n";
         if (feature_data.validity.RowIsValid(feature_data.sel->get_index(i)) && label_data.validity.RowIsValid(label_data.sel->get_index(i))) {
             auto &state = *states[sdata.sel->get_index(i)];
             auto feature_vector = duckdb::ListValue::GetChildren(feature.GetValue(i));
@@ -143,7 +142,6 @@ static void LinearRegressionFinalize(duckdb::Vector &state_vector, duckdb::Aggre
         // Test GD routine and see how much time learning rate decay and convergence testing saves
         // Just make new finalize function, and then new agg function using it
         // Also linear algebra libraries? (if time)
-
 
         // Convergence parameters
         auto max_iterations = 10000;

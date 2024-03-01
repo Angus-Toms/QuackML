@@ -31,6 +31,7 @@ private:
 
 public:
     LinearRegressionRingElement();
+    LinearRegressionRingElement(const LinearRegressionRingElement &other);
     LinearRegressionRingElement(idx_t d, bool additive_identity);
     LinearRegressionRingElement(duckdb::vector<duckdb::Value> features);
     LinearRegressionRingElement(duckdb::Value ring);
