@@ -1,0 +1,30 @@
+===== Test file: test/quackml/test_100.tsv =====
+Export/import time: 0.01681804656982422 seconds
+Cleaning time: 0.017780780792236328 seconds
+Training time: 0.015951871871948242 seconds
+Total benchmark time: 0.03279542922973633 seconds
+
+===== Test file: test/quackml/test_1000.tsv =====
+Export/import time: 0.032241106033325195 seconds
+Cleaning time: 0.13931608200073242 seconds
+Training time: 0.005752086639404297 seconds
+Total benchmark time: 0.03801989555358887 seconds
+
+===== Test file: test/quackml/test_10000.tsv =====
+Export/import time: 0.35761523246765137 seconds
+Cleaning time: 1.7452850341796875 seconds
+Training time: 0.007998943328857422 seconds
+Total benchmark time: 0.36563897132873535 seconds
+
+===== Test file: test/quackml/test_100000.tsv =====
+Export/import time: 2.6701393127441406 seconds
+Cleaning time: 15.345163106918335 seconds
+Training time: 0.06989693641662598 seconds
+Total benchmark time: 2.740065097808838 seconds
+
+===== Test file: test/quackml/test_1000000.tsv =====
+Export/import time: 22.718430995941162 seconds
+Cleaning time: 174.38705396652222 seconds
+Training time: 0.807866096496582 seconds
+Total benchmark time: 23.526397943496704 seconds
+
