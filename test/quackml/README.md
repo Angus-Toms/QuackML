@@ -8,7 +8,7 @@ python3 test/quackml/generate_tests.py
 from the home directory. Each run will generate new secret weights for the test sets which are written to `weights.txt`
 and can be used to check the output of QuackML functions
 
-## Basic linear regression tests
+## Linear regression tests
 Datasets of the form `test_{n}.tsv` are designed to test the basic `linear_regression` funtion. They 
 contain n records each of the form 
 ```csv
@@ -18,10 +18,84 @@ You can test the dataset in `test_100.tsv` by running
 ```SQL
 CREATE TABLE tsv AS SELECT * FROM read_csv('test/quackml/test_1000.tsv', header=TRUE, delim='\t', columns={'features': 'DOUBLE[]', 'label': 'DOUBLE'});
 SELECT linear_regression(features, label, 0) regression_result FROM tsv;
-┌─────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┐
-│                                                                              regression_result                                                                              │
-│                                                                                  double[]                                                                                   │
-├─────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┤
-│ [-19.9999999123241, 8.000000018171473, 12.999999763848912, 15.999999885022726, -10.00000005362921, -13.99999994294578, -10.999999978857364, 4.999999849124073, 18.0000000…  │
-└─────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┘
+┌──────────────────────────────────────────────────────────────────────────────────────────────────────────────┐
+│                                              regression_result                                               │
+│                                                   double[]                                                   │
+├──────────────────────────────────────────────────────────────────────────────────────────────────────────────┤
+│ [-19.9999999123241, 8.000000018171473, 12.999999763848912, 15.999999885022726, -10.00000005362921, -13.999…  │
+└──────────────────────────────────────────────────────────────────────────────────────────────────────────────┘
+```
+
+## Linear regression with groups tests 
+Datasets of the form `test_groups.tsv` are designed to test the basic `linear_regression` function with `GROUP BY` clauses. 
+They contain records of the form 
+```csv
+[feature_1, feature_2, ... , feature_50] \t label \t class 
+```
+You can test the dataset in `test_groups.tsv` by running 
+```SQL
+CREATE TABLE tsv AS SELECT * FROM read_csv('test/quackml/test_groups.tsv', header=TRUE, delim='\t', columns={'features': 'DOUBLE[]', 'label': 'DOUBLE', 'class': 'INTEGER'});
+SELECT class, linear_regression(features, label, 0) regression_result FROM tsv GROUP BY class;
+┌───────┬──────────────────────────────────────────────────────────────────────────────────────────────────────┐
+│ class │                                          regression_result                                           │
+│ int32 │                                               double[]                                               │
+├───────┼──────────────────────────────────────────────────────────────────────────────────────────────────────┤
+│     0 │ [-9.001594706042146, -17.997533379261974, 13.000174651294092, -15.00114952863031, 16.0011853225166…  │
+│     1 │ [-3.000195925613427, 14.99980381767249, 3.000177260094619, -19.999685765201544, -18.00012611504948…  │
+│     2 │ [6.999406213949707, -1.0013274219812698, -1.000732162903946, 18.99988721895769, 5.998527547462346,…  │
+│     3 │ [5.9994841666374015, -14.000302368907304, 11.00135783698337, 9.000025455808894, -17.99912833220765…  │
+│     4 │ [9.999957628721813, 13.998959263709994, 11.000547429801486, -18.00023483661305, 0.0013206232043170…  │
+└───────┴──────────────────────────────────────────────────────────────────────────────────────────────────────┘
+```
+
+## Factorised linear regression tests
+Datasets of the form `test_join_{a}.tsv` are designed to test the factorised computation functions: `linear_regression_ring` and `to_ring`.
+They contain records of the form 
+```csv
+[feature_1, ... , feature_n] \t id 
+or 
+[label] \t id
+``` 
+You can test the datasets in `test_join_a.tsv` (containing labels and ids), `test_join_b.tsv` (containing features and ids), and `test_join_c.tsv` (containing more features and ids) by running 
+```SQL
+CREATE TABLE labels as SELECT * FROM read_csv('test/quackml/test_join_a.tsv', header=TRUE, delim='\t', columns={'label': 'DOUBLE[]', 'id': 'INTEGER'});
+CREATE TABLE features_1 AS SELECT * FROM read_csv('test/quackml/test_join_b.tsv', header=TRUE, delim='\t', columns={'features': 'DOUBLE[]', 'id': 'INTEGER'});
+CREATE TABLE features_2 AS SELECT * FROM read_csv('test/quackml/test_join_c.tsv', header=TRUE, delim='\t', columns={'features': 'DOUBLE[]', 'id': 'INTEGER'});
+
+SELECT linear_regression_ring([t1.ring, t2.ring, t3.ring], 0) regression_result FROM
+    (SELECT id, to_ring(label) ring FROM labels GROUP BY id) AS t1,
+    (SELECT id, to_ring(features) ring FROM features_1 GROUP BY id) AS t2,
+    (SELECT id, to_ring(features) ring FROM features_2 GROUP BY id) AS t3
+    WHERE t1.id = t2.id AND t2.id = t3.id;
+┌──────────────────────────────────────────────────────────────────────────────────────────────────────────────┐
+│                                              regression_result                                               │
+│                                                   double[]                                                   │
+├──────────────────────────────────────────────────────────────────────────────────────────────────────────────┤
+│ [14.99999996665001, -11.999999910036909, 10.000000001185873, -14.000000002702574, 10.000000013955688, -11.…  │
+└──────────────────────────────────────────────────────────────────────────────────────────────────────────────┘
+```
+
+## Factorised linear regression tests
+Datasets of the form `test_join_group_{a}.tsv` are designed to test the factorised computation functions: `linear_regression_ring` and `to_ring`.
+They contain similar records to the `test_join_{a}.tsv` datasets except one set contains a class. This then requires a `GROUP BY` clause to be 
+passed to a to_ring class. For example:
+```SQL
+CREATE TABLE labels as SELECT * FROM read_csv('test/quackml/test_join_group_a.tsv', header=TRUE, delim='\t', columns={'label': 'DOUBLE[]', 'id': 'INTEGER'});
+CREATE TABLE features as SELECT * FROM reac_csv('test/quackml/test_join_group_b.tsv', header=TRUE, delim='\t', columns={'features': 'DOUBLE[]', 'id': 'INTEGER', 'class': 'INTEGER'});
+
+SELECT t2.class, linear_regression_ring([t1.ring, t2.ring], 0) regression_result FROM 
+    (SELECT id, to_ring(label) ring FROM labels GROUP BY id) AS t1,
+    (SELECT id, class, to_ring(features) ring FROM features) AS t2,
+    WHERE t1.id = t2.id GROUP BY t2.class;
+
+┌───────┬──────────────────────────────────────────────────────────────────────────────────────────────────────┐
+│ class │                                          regression_result                                           │
+│ int32 │                                               double[]                                               │
+├───────┼──────────────────────────────────────────────────────────────────────────────────────────────────────┤
+│     0 │ [-9.001594706042146, -17.997533379261974, 13.000174651294092, -15.00114952863031, 16.0011853225166…  │
+│     1 │ [-3.000195925613427, 14.99980381767249, 3.000177260094619, -19.999685765201544, -18.00012611504948…  │
+│     2 │ [6.999406213949707, -1.0013274219812698, -1.000732162903946, 18.99988721895769, 5.998527547462346,…  │
+│     3 │ [5.9994841666374015, -14.000302368907304, 11.00135783698337, 9.000025455808894, -17.99912833220765…  │
+│     4 │ [9.999957628721813, 13.998959263709994, 11.000547429801486, -18.00023483661305, 0.0013206232043170…  │
+└───────┴──────────────────────────────────────────────────────────────────────────────────────────────────────┘
 ```
