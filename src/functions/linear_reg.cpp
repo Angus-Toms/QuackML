@@ -148,7 +148,7 @@ static void LinearRegressionFinalize(duckdb::Vector &state_vector, duckdb::Aggre
         double convergence_threshold = 1e-5;
 
         // Learning rate parameters
-        double initial_learning_rate = 0.1 / std::sqrt(state.count);
+        double initial_learning_rate = state.count < 1000 ? 0.1 : 0.1 / std::sqrt(state.count);
         double decay_rate = 0.9; 
         double decay_steps = 100; 
 

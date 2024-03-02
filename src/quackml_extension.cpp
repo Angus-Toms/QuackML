@@ -28,16 +28,41 @@ void run_quackml_tests(DuckDB &db) {
     Connection con(db);
 
     // Linear regression tests 
-    // con.Query("CREATE TABLE csv AS SELECT * FROM read_csv('test/quackml/test_1000000.tsv', header = TRUE, delim = '\t', columns = {'features': 'DOUBLE[]', 'label': 'DOUBLE'});");
+    // con.Query("CREATE TABLE csv AS SELECT * FROM read_csv('test/quackml/test_100.tsv', header = TRUE, delim = '\t', columns = {'features': 'DOUBLE[]', 'label': 'DOUBLE'});");
     // auto start_time = std::chrono::high_resolution_clock::now();
     // con.Query("SELECT linear_regression(features, label, 0) as linear_regression FROM csv;")->Print();
     // auto end_time = std::chrono::high_resolution_clock::now();
-    // std::cout << "Linear regression time: " << std::chrono::duration_cast<std::chrono::milliseconds>(end_time - start_time).count() << "ms\n";
+    // std::cout << "Linear regression time (100 obs): " << std::chrono::duration_cast<std::chrono::milliseconds>(end_time - start_time).count() << "ms\n";
 
-    con.Query("CREATE TABLE features AS SELECT * FROM read_csv('test/quackml/test_join_b.tsv', header=TRUE, delim='\t', columns={'features': 'DOUBLE[]', 'id': 'INTEGER'});");
-    con.Query("CREATE TABLE labels as SELECT * FROM read_csv('test/quackml/test_join_a.tsv', header=TRUE, delim='\t', columns={'label': 'DOUBLE[]', 'id': 'INTEGER'});");
-    con.Query("SELECT * FROM (SELECT id, to_ring(label) ring FROM labels GROUP BY id) AS t1, (SELECT id, to_ring(features) ring FROM features GROUP BY id) AS t2 WHERE t1.id = t2.id;")->Print();
-    con.Query("SELECT linear_regression_ring([t1.ring, t2.ring], 0) FROM (SELECT id, to_ring(label) ring FROM labels GROUP BY id) AS t1, (SELECT id, to_ring(features) ring FROM features GROUP BY id) AS t2 WHERE t1.id = t2.id;")->Print();
+    con.Query("CREATE TABLE csv_1 AS SELECT * FROM read_csv('test/quackml/test_100.tsv', header = TRUE, delim = '\t', columns = {'features': 'DOUBLE[]', 'label': 'DOUBLE'});");
+    auto start_time = std::chrono::high_resolution_clock::now();
+    con.Query("SELECT linear_regression(features, label, 0) as linear_regression FROM csv_1;")->Print();
+    auto end_time = std::chrono::high_resolution_clock::now();
+    std::cout << "Linear regression time (100 obs): " << std::chrono::duration_cast<std::chrono::milliseconds>(end_time - start_time).count() << "ms\n";
+
+    con.Query("CREATE TABLE csv_2 AS SELECT * FROM read_csv('test/quackml/test_1000.tsv', header = TRUE, delim = '\t', columns = {'features': 'DOUBLE[]', 'label': 'DOUBLE'});");
+    start_time = std::chrono::high_resolution_clock::now();
+    con.Query("SELECT linear_regression(features, label, 0) as linear_regression FROM csv_2;")->Print();
+    end_time = std::chrono::high_resolution_clock::now();
+    std::cout << "Linear regression time (1000 obs): " << std::chrono::duration_cast<std::chrono::milliseconds>(end_time - start_time).count() << "ms\n";
+
+    con.Query("CREATE TABLE csv_3 AS SELECT * FROM read_csv('test/quackml/test_10000.tsv', header = TRUE, delim = '\t', columns = {'features': 'DOUBLE[]', 'label': 'DOUBLE'});");
+    start_time = std::chrono::high_resolution_clock::now();
+    con.Query("SELECT linear_regression(features, label, 0) as linear_regression FROM csv_3;")->Print();
+    end_time = std::chrono::high_resolution_clock::now();
+    std::cout << "Linear regression time (10000 obs): " << std::chrono::duration_cast<std::chrono::milliseconds>(end_time - start_time).count() << "ms\n";
+
+    con.Query("CREATE TABLE csv_4 AS SELECT * FROM read_csv('test/quackml/test_100000.tsv', header = TRUE, delim = '\t', columns = {'features': 'DOUBLE[]', 'label': 'DOUBLE'});");
+    start_time = std::chrono::high_resolution_clock::now();
+    con.Query("SELECT linear_regression(features, label, 0) as linear_regression FROM csv_4;")->Print();
+    end_time = std::chrono::high_resolution_clock::now();
+    std::cout << "Linear regression time (100000 obs): " << std::chrono::duration_cast<std::chrono::milliseconds>(end_time - start_time).count() << "ms\n";
+
+    con.Query("CREATE TABLE csv_5 AS SELECT * FROM read_csv('test/quackml/test_1000000.tsv', header = TRUE, delim = '\t', columns = {'features': 'DOUBLE[]', 'label': 'DOUBLE'});");
+    start_time = std::chrono::high_resolution_clock::now();
+    con.Query("SELECT linear_regression(features, label, 0) as linear_regression FROM csv_5;")->Print();
+    end_time = std::chrono::high_resolution_clock::now();
+    std::cout << "Linear regression time (1000000 obs): " << std::chrono::duration_cast<std::chrono::milliseconds>(end_time - start_time).count() << "ms\n";
 
     std::cout << "<========== QuackML tests complete ==========>\n";
 }
@@ -56,7 +81,7 @@ void QuackmlExtension::Load(DuckDB &db) {
 
     con.Commit();
 
-    //run_quackml_tests(db);
+    run_quackml_tests(db);
 }
 
 std::string QuackmlExtension::Name() {

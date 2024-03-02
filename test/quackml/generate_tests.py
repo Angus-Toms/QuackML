@@ -99,14 +99,14 @@ def generate_join_group_test(fname_a: str, fname_b: str, groups: int, n: int) ->
             f.write(f"{list(all_data[id_][0])}\t{id_}\t{all_data[id_][1]}\n")
     
 def main():
-    #generate_test_set('test/quackml/test_100.tsv', 100)
-    #generate_test_set('test/quackml/test_1000.tsv', 1000)
-    #generate_test_set('test/quackml/test_10000.tsv', 10000)
-    #generate_test_set('test/quackml/test_100000.tsv', 100000)
-    #generate_test_set('test/quackml/test_1000000.tsv', 1000000)
+    generate_test_set('test/quackml/test_100.tsv', 100)
+    generate_test_set('test/quackml/test_1000.tsv', 1000)
+    generate_test_set('test/quackml/test_10000.tsv', 10000)
+    generate_test_set('test/quackml/test_100000.tsv', 100000)
+    generate_test_set('test/quackml/test_1000000.tsv', 1000000)
     #generate_group_test('test/quackml/test_groups.tsv', 5, 1000)
     #generate_join_test('test/quackml/test_join_a.tsv', 'test/quackml/test_join_b.tsv', 5)
-    generate_join_group_test('test/quackml/test_join_group_a.tsv', 'test/quackml/test_join_group_b.tsv', 5, 1000)
+    #generate_join_group_test('test/quackml/test_join_group_a.tsv', 'test/quackml/test_join_group_b.tsv', 5, 1000)
 
     if os.path.exists("test/quackml/weights.txt"):
         os.remove("test/quackml/weights.txt")
