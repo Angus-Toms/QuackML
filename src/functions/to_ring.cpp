@@ -49,20 +49,29 @@ static void ToRingUpdate(duckdb::Vector inputs[], duckdb::AggregateInputData &, 
 }
 
 static void ToRingCombine(duckdb::Vector &state_vector, duckdb::Vector &combined, duckdb::AggregateInputData &, idx_t count) {
-    std::cout << "ToRingCombine\n";
+    //std::cout << "ToRingCombine\n";
     duckdb::UnifiedVectorFormat sdata;
     state_vector.ToUnifiedFormat(count, sdata);
     auto states_ptr = (ToRingState **)sdata.data;
     auto combined_ptr = duckdb::FlatVector::GetData<ToRingState *>(combined);
 
     for (idx_t i = 0; i < count; i++) {
+        //std::cout << "Iteration " << i << "\n";
         auto &state = *states_ptr[sdata.sel->get_index(i)];
         if (!state.ringElement) {
+            //std::cout << "State ring is null\n";
             continue;
         }
-
-        // MUNGO TODO: Instantiate blank ring elemnt if needed?
-        *(combined_ptr[i]->ringElement) = *(combined_ptr[i]->ringElement) + *state.ringElement;
+        if (!combined_ptr[i]->ringElement) {
+            auto d = state.ringElement->get_d();
+            combined_ptr[i]->ringElement = new LinearRegressionRingElement(d, true);
+        }
+        //std::cout << "Combined ring before:\n";
+        //combined_ptr[i]->ringElement->Print();
+        auto combined_ring = new LinearRegressionRingElement((*combined_ptr[i]->ringElement) + (*state.ringElement));
+        combined_ptr[i]->ringElement = combined_ring;
+        //std::cout << "Combined ring after:\n";
+        //combined_ptr[i]->ringElement->Print();
     }
 }
 

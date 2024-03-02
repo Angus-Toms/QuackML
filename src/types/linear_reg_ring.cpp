@@ -11,7 +11,12 @@
 
 namespace quackml {
 
-LinearRegressionRingElement::LinearRegressionRingElement() {}
+LinearRegressionRingElement::LinearRegressionRingElement() {
+    d = 0;
+    count = duckdb::Value::DOUBLE(0);
+    sums = duckdb::Value::LIST(duckdb::vector<duckdb::Value>());
+    covar = duckdb::Value::LIST(duckdb::vector<duckdb::Value>());
+}
 // Copy constructor
 LinearRegressionRingElement::LinearRegressionRingElement(const LinearRegressionRingElement &other) {
     d = other.d;

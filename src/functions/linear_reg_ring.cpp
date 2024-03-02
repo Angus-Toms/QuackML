@@ -87,37 +87,85 @@ static void LinearRegressionRingUpdate(duckdb::Vector inputs[], duckdb::Aggregat
     //     }
     // }
     std::cout << "LinearRegressionRingUpdate called\n";
+    std::cout << "Count: " << count << "\n";
 
-    auto &ring_input = inputs[0];
-    auto rings = duckdb::ListValue::GetChildren(ring_input.GetValue(0));
-    auto ring_count = rings.size();
-
+    auto &rings = inputs[0];
     auto &lambda = inputs[1];
+    duckdb::UnifiedVectorFormat rings_data;
     duckdb::UnifiedVectorFormat lambda_data;
     duckdb::UnifiedVectorFormat sdata;
+
+    rings.ToUnifiedFormat(count, rings_data);
     lambda.ToUnifiedFormat(count, lambda_data);
     state_vector.ToUnifiedFormat(count, sdata);
-
     auto states = (LinearRegressionRingState **)sdata.data;
-    auto &state = *states[sdata.sel->get_index(0)]; 
 
-    for (idx_t i = 0; i < ring_count; i++) {
-        auto ring = new LinearRegressionRingElement(rings[i]);
+    // Iterate through count 
+    for (idx_t i = 0; i < count; i++) {
+        //std::cout << "i=" << i << "\n";
+        // Multiply rings from input relations
+        auto ring_children = duckdb::ListValue::GetChildren(rings.GetValue(i));
+        auto ring_count = ring_children.size();
+        auto observation_ring = new LinearRegressionRingElement(ring_children[0]);
+        for (idx_t j = 1; j < ring_count; j++) {
+            //std::cout << "j=" << j << "\n";
+            auto ring = new LinearRegressionRingElement(ring_children[j]);
+            // Padding 
+            auto current_d = observation_ring->get_d();
+            auto ring_d = ring->get_d();
+            observation_ring->pad_lower(ring_d);
+            ring->pad_upper(current_d);
+
+            observation_ring = new LinearRegressionRingElement((*observation_ring) * (*ring));
+        }
+
+        //std::cout << "Observation ring:\n";
+        //observation_ring->Print();
+
+        // Sum into state ring
+        auto &state = *states[sdata.sel->get_index(i)];
         if (!state.ring) {
-            state.ring = ring;
+            //std::cout << "State ring is null\n";
+            state.ring = observation_ring;
             state.lambda = duckdb::UnifiedVectorFormat::GetData<double>(lambda_data)[lambda_data.sel->get_index(i)];
         } else {
-            // Padding rings, state ring must always be left operand 
-            auto state_d = state.ring->get_d();
-            auto ring_d = ring->get_d();
-            state.ring->pad_lower(ring_d);
-            ring->pad_upper(state_d);
-
-            // Multiply rings, use copy constructor to dynamically allocate object 
-            auto combined = new LinearRegressionRingElement((*state.ring) * (*ring));
-            state.ring = combined;
+            state.ring = new LinearRegressionRingElement((*state.ring) + (*observation_ring));
+            //std::cout << "State ring summed:\n";
+            //state.ring->Print();
         }
-    }   
+    }
+
+    // for (auto &ring : rings) {
+    //     std::cout << "----- New ring -----\n";
+    //     for (auto &element : duckdb::ListValue::GetChildren(ring)) {
+    //         std::cout << "----- New element -----\n";
+    //         for (auto &row : duckdb::ListValue::GetChildren(element)) {
+    //             for (auto &col : duckdb::ListValue::GetChildren(row)) {
+    //                 std::cout << col.GetValue<double>() << " ";
+    //             }
+    //         std::cout << "\n";
+    //         }
+    //     }
+    // }
+
+    // for (idx_t i = 0; i < count; i++) {
+    //     std::cout << "i=" << i << "\n";
+    //     // auto ring = new LinearRegressionRingElement(rings[i]);
+    //     // if (!state.ring) {
+    //     //     state.ring = ring;
+    //     //     state.lambda = duckdb::UnifiedVectorFormat::GetData<double>(lambda_data)[lambda_data.sel->get_index(i)];
+    //     // } else {
+    //     //     // Padding rings, state ring must always be left operand 
+    //     //     auto state_d = state.ring->get_d();
+    //     //     auto ring_d = ring->get_d();
+    //     //     state.ring->pad_lower(ring_d);
+    //     //     ring->pad_upper(state_d);
+
+    //     //     // Multiply rings, use copy constructor to dynamically allocate object 
+    //     //     auto combined = new LinearRegressionRingElement((*state.ring) * (*ring));
+    //     //     state.ring = combined;
+    //     // }
+    // }   
 }
 
 static void LinearRegressionRingCombine(duckdb::Vector &state_vector, duckdb::Vector &combined, duckdb::AggregateInputData &, idx_t count) {
@@ -273,8 +321,8 @@ static void LinearRegressionRingFinalize(duckdb::Vector &state_vector, duckdb::A
             sigma.push_back(row_vec);
         }
 
-        printMatrix(c);
-        printMatrix(sigma);
+        //printMatrix(c);
+        //printMatrix(sigma);
 
         // Gradient descent
         // Convergence parameters
