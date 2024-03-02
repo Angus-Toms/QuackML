@@ -170,6 +170,27 @@ static void LinearRegressionRingUpdate(duckdb::Vector inputs[], duckdb::Aggregat
 
 static void LinearRegressionRingCombine(duckdb::Vector &state_vector, duckdb::Vector &combined, duckdb::AggregateInputData &, idx_t count) {
     std::cout << "LinearRegressionRingCombine called\n";
+
+    duckdb::UnifiedVectorFormat sdata;
+    state_vector.ToUnifiedFormat(count, sdata);
+    auto state_ptr = (LinearRegressionRingState **)sdata.data;
+    auto combined_ptr = duckdb::FlatVector::GetData<LinearRegressionRingState *>(combined);
+
+    for (idx_t i = 0; i < count; i++) {
+        auto &state = *state_ptr[sdata.sel->get_index(i)];
+        if (!state.ring) {
+            continue; 
+        }
+
+        if (!combined_ptr[i]->ring) {
+            // No combined ring exists yet, just set it to the state ring (guaranteed to exist)
+            combined_ptr[i]->ring = state.ring;
+        } else {
+            // Combined ring does exist, sum state ring into it
+            combined_ptr[i]->ring = new LinearRegressionRingElement((*combined_ptr[i]->ring) + (*state.ring));
+            combined_ptr[i]->lambda = state.lambda;
+        }
+    }
 }
 
 static void LinearRegressionRingFinalize(duckdb::Vector &state_vector, duckdb::AggregateInputData &, duckdb::Vector &result, idx_t count, idx_t offset) {

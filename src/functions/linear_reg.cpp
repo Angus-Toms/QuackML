@@ -117,11 +117,10 @@ static void LinearRegressionCombine(duckdb::Vector &state_vector, duckdb::Vector
         combined_ptr[i]->d = state.d;
         combined_ptr[i]->lambda = state.lambda;
     }
-
 }
 
 static void LinearRegressionFinalize(duckdb::Vector &state_vector, duckdb::AggregateInputData &, duckdb::Vector &result, idx_t count, idx_t offset) {
-    std::cout << "Finalize called\n";
+    std::cout << "LinearRegressionFinalize called\n";
 
     duckdb::UnifiedVectorFormat sdata;
     state_vector.ToUnifiedFormat(count, sdata);
