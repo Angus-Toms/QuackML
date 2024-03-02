@@ -18,6 +18,7 @@ You can test the dataset in `test_100.tsv` by running
 ```SQL
 CREATE TABLE tsv AS SELECT * FROM read_csv('test/quackml/test_1000.tsv', header=TRUE, delim='\t', columns={'features': 'DOUBLE[]', 'label': 'DOUBLE'});
 SELECT linear_regression(features, label, 0) regression_result FROM tsv;
+
 ┌──────────────────────────────────────────────────────────────────────────────────────────────────────────────┐
 │                                              regression_result                                               │
 │                                                   double[]                                                   │
@@ -36,6 +37,7 @@ You can test the dataset in `test_groups.tsv` by running
 ```SQL
 CREATE TABLE tsv AS SELECT * FROM read_csv('test/quackml/test_groups.tsv', header=TRUE, delim='\t', columns={'features': 'DOUBLE[]', 'label': 'DOUBLE', 'class': 'INTEGER'});
 SELECT class, linear_regression(features, label, 0) regression_result FROM tsv GROUP BY class;
+
 ┌───────┬──────────────────────────────────────────────────────────────────────────────────────────────────────┐
 │ class │                                          regression_result                                           │
 │ int32 │                                               double[]                                               │
@@ -67,6 +69,7 @@ SELECT linear_regression_ring([t1.ring, t2.ring, t3.ring], 0) regression_result 
     (SELECT id, to_ring(features) ring FROM features_1 GROUP BY id) AS t2,
     (SELECT id, to_ring(features) ring FROM features_2 GROUP BY id) AS t3
     WHERE t1.id = t2.id AND t2.id = t3.id;
+
 ┌──────────────────────────────────────────────────────────────────────────────────────────────────────────────┐
 │                                              regression_result                                               │
 │                                                   double[]                                                   │
