@@ -78,7 +78,7 @@ SELECT linear_regression_ring([t1.ring, t2.ring, t3.ring], 0) regression_result 
 └──────────────────────────────────────────────────────────────────────────────────────────────────────────────┘
 ```
 
-## Factorised linear regression tests
+## Factorised linear regression tests with groups
 Datasets of the form `test_join_group_{a}.tsv` are designed to test the factorised computation functions: `linear_regression_ring` and `to_ring`.
 They contain similar records to the `test_join_{a}.tsv` datasets except one set contains a class. This then requires a `GROUP BY` clause to be 
 passed to a to_ring class. For example:

@@ -7,5 +7,4 @@ testext
 test/python/__pycache__/
 .Rhistory
 random
-test/quackml/*.tsv
-test/quackml/*.csv
+test/qauckml/datasets/
