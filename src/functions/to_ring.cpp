@@ -34,6 +34,9 @@ static void ToRingUpdate(duckdb::Vector inputs[], duckdb::AggregateInputData &, 
     duckdb::UnifiedVectorFormat sdata;
     state_vector.ToUnifiedFormat(count, sdata);
     auto states = (ToRingState **)sdata.data;
+    // Why am I doing this entry by entry?
+    // Would not be better to add features together for each state 
+    // Then construct the ring element from the sum?
     for (idx_t i = 0; i < count; i++) {
         if (features_data.validity.RowIsValid(features_data.sel->get_index(i))) {
             auto &state = *states[sdata.sel->get_index(i)];

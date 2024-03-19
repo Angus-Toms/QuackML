@@ -49,8 +49,8 @@ void matrixAdd(std::vector<std::vector<double>> &matrix1, std::vector<std::vecto
 };
 
 std::vector<std::vector<double>> getGradientND(std::vector<std::vector<double>> &sigma, std::vector<std::vector<double>> &c, std::vector<std::vector<double>> &theta, double lambda) {    
-    size_t n = sigma.size();
     size_t d = sigma[0].size();
+    size_t count = sigma.size();
 
     // sigma * theta
     std::vector<std::vector<double>> result(d, std::vector<double>(1, 0));
@@ -60,7 +60,7 @@ std::vector<std::vector<double>> getGradientND(std::vector<std::vector<double>> 
     matrixSubtract(result, c, result);
 
     // (1/n) * (sigma * theta - c)
-    matrixScalarMultiply(result, (1.0 / n), result);
+    matrixScalarMultiply(result, (1.0 / count), result);
 
     // lambda * theta
     std::vector<std::vector<double>> regularizer(d, std::vector<double>(1, 0));

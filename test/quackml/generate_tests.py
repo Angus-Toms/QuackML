@@ -2,7 +2,7 @@ import numpy as np
 import os
 
 SEED = 42
-DIMENSIONS = 50
+DIMENSIONS = 25
 all_weights = []
 
 def generate_test_set(fname: str, n: int) -> None:
@@ -97,16 +97,34 @@ def generate_join_group_test(fname_a: str, fname_b: str, groups: int, n: int) ->
         f.write("features\tid\tclass\n")
         for id_ in ids:
             f.write(f"{list(all_data[id_][0])}\t{id_}\t{all_data[id_][1]}\n")
-    
+
+def factorised_test(fname: str, n: int) -> None:
+    # Generate n datasets containing 10 observations of 5 features
+    for i in range(n):
+        features = np.random.standard_normal(size=(10, 5))
+        
+        dataset_name = f"{fname}_{i}.tsv"
+        if os.path.exists(dataset_name):
+            os.remove(dataset_name)    
+
+        with open(dataset_name, 'w') as f:
+            f.write("features\tid\n")
+            for feat in features:
+                id_ = np.random.randint(0, 3)
+                f.write(f"{list(feat)}\t{id_}\n")
+
+
 def main():
-    generate_test_set('test/quackml/test_100.tsv', 100)
-    generate_test_set('test/quackml/test_1000.tsv', 1000)
-    generate_test_set('test/quackml/test_10000.tsv', 10000)
-    generate_test_set('test/quackml/test_100000.tsv', 100000)
-    generate_test_set('test/quackml/test_1000000.tsv', 1000000)
+    # for i in range(2, 21):
+    #     size = 2**i
+    #     fname = f"test/quackml/datasets/test_{i}.tsv"
+    #     generate_test_set(fname, size)
+
     #generate_group_test('test/quackml/test_groups.tsv', 5, 1000)
     #generate_join_test('test/quackml/test_join_a.tsv', 'test/quackml/test_join_b.tsv', 5)
     #generate_join_group_test('test/quackml/test_join_group_a.tsv', 'test/quackml/test_join_group_b.tsv', 5, 1000)
+
+    factorised_test('test/quackml/datasets/factorised', 10)
 
     if os.path.exists("test/quackml/weights.txt"):
         os.remove("test/quackml/weights.txt")

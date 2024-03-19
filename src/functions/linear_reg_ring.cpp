@@ -37,6 +37,8 @@ struct LinearRegressionRingFunction {
     }
 };
 
+// TODO: Count?
+
 static void LinearRegressionRingUpdate(duckdb::Vector inputs[], duckdb::AggregateInputData &, idx_t input_count, duckdb::Vector &state_vector, idx_t count) {
     std::cout << "LinearRegressionRingUpdate called\n";
     auto &rings = inputs[0];
@@ -51,9 +53,16 @@ static void LinearRegressionRingUpdate(duckdb::Vector inputs[], duckdb::Aggregat
     auto states = (LinearRegressionRingState **)sdata.data;
 
     for (idx_t i = 0; i < count; i++) {
+        //std::cout << "Processing row " << i << "\n";
+        // Multiply all rings together, 
+        // If computing across a join, n lists of rings will be passed 
+        // and their resulting products will be summed (for n distinct values
+        // of the join attribute)
         auto ring_children = duckdb::ListValue::GetChildren(rings.GetValue(i));
         auto observation_ring = new LinearRegressionRingElement(ring_children[0]);
         for (idx_t j = 1; j < ring_children.size(); j++) {
+            //std::cout << "Processing ring " << j << "\n";
+            //printMatrix(ring_children[j])
             auto ring = new LinearRegressionRingElement(ring_children[j]);
             auto ring_d = ring->get_d();
             auto observation_d = observation_ring->get_d();
@@ -70,6 +79,21 @@ static void LinearRegressionRingUpdate(duckdb::Vector inputs[], duckdb::Aggregat
             state.ring = new LinearRegressionRingElement((*state.ring) + (*observation_ring));
         }
     }
+}
+
+static void NewLinearRegressionRingUpdate(duckdb::Vector inputs[], duckdb::AggregateInputData &, idx_t input_count, duckdb::Vector &state_vector, idx_t count) {
+    auto &rings = inputs[0];
+    auto &lambda = inputs[1];
+    duckdb::UnifiedVectorFormat rings_data;
+    duckdb::UnifiedVectorFormat lambda_data;
+    duckdb::UnifiedVectorFormat sdata;
+
+    rings.ToUnifiedFormat(count, rings_data);
+    lambda.ToUnifiedFormat(count, lambda_data);
+    state_vector.ToUnifiedFormat(count, sdata);
+    auto states = (LinearRegressionRingState **)sdata.data;
+
+    // Find all children for a given state
 }
 
 static void LinearRegressionRingCombine(duckdb::Vector &state_vector, duckdb::Vector &combined, duckdb::AggregateInputData &, idx_t count) {
@@ -136,13 +160,14 @@ static void LinearRegressionRingFinalize(duckdb::Vector &state_vector, duckdb::A
         // Convergence parameters
         auto max_iterations = 10000;
         idx_t iter = 0;
-        double convergence_threshold = 1e-5;
+        double convergence_threshold = 1e-3;
 
         // Learning rate parameters
         auto count = state.ring->get_count()->GetValue<double>();
-        double initial_learning_rate = 0.1 / std::sqrt(count);
-        double decay_rate = 0.9; 
+        double initial_learning_rate = count < 100 ? 0.05 : 5e-9 / std::sqrt(count);
+        double decay_rate = 0.95; 
         double decay_steps = 100; 
+
 
         while (iter < max_iterations) {
             auto gradient = getGradientND(sigma, c, *state.theta, state.lambda);

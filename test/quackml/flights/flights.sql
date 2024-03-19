@@ -144,6 +144,8 @@ ALTER TABLE flights
 ADD COLUMN dest_mean_delay DOUBLE;
 UPDATE flights 
 SET dest_mean_delay = (SELECT mean_arr_delay FROM airport_dest_mean_delay WHERE faa = flights.dest);
+UPDATE flights 
+SET dest_mean_delay = 0 WHERE dest_mean_delay IS NULL;
 ALTER TABLE flights DROP COLUMN dest;
 
 /* 
@@ -259,8 +261,40 @@ SET
     four_cycle = one_hot_encode(engine, '4 Cycle');
 ALTER TABLE planes DROP COLUMN engine;
 
+
+/*
+================================================================================
+Mean encode airlines.name 
+================================================================================
+*/
+CREATE VIEW airline_name_mean_delay AS
+SELECT 
+    airlines.name AS name,
+    AVG(flights.arr_delay_int) AS mean_arr_delay
+FROM
+    flights
+JOIN    
+    airlines ON flights.carrier = airlines.carrier
+GROUP BY
+    airlines.name;
+
+ALTER TABLE airlines
+ADD COLUMN name_mean_delay DOUBLE;
+UPDATE airlines
+SET name_mean_delay = (SELECT mean_arr_delay FROM airline_name_mean_delay WHERE name = airlines.name);
+
 SELECT * FROM flights
 JOIN airlines ON flights.carrier = airlines.carrier
 JOIN airports ON flights.origin = airports.faa
 JOIN planes ON flights.tailnum = planes.tailnum
 JOIN weather ON flights.origin = weather.origin AND flights.time_hour = weather.time_hour;
+
+COPY airlines TO 'test/quackml/flights/airlines_clean.csv' (HEADER, DELIMITER ',');
+COPY airports TO 'test/quackml/flights/airports_clean.csv' (HEADER, DELIMITER ',');
+COPY flights TO 'test/quackml/flights/flights_clean.csv' (HEADER, DELIMITER ',');
+COPY planes TO 'test/quackml/flights/planes_clean.csv' (HEADER, DELIMITER ',');
+COPY weather TO 'test/quackml/flights/weather_clean.csv' (HEADER, DELIMITER ',');
+
+SELECT linear_regression(
+    [f.]
+)

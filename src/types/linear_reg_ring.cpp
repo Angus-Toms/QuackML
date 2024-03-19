@@ -238,6 +238,4 @@ void LinearRegressionRingElement::Print() {
     }
 }
 
-
-
 } // namespace quackml
