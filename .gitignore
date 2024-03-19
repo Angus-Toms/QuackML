@@ -7,4 +7,6 @@ testext
 test/python/__pycache__/
 .Rhistory
 random
-test/qauckml/
+test/qauckml/datasets
+test/quakml/flights
+test/quackml/home_credit
