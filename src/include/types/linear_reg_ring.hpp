@@ -19,43 +19,27 @@
 
 namespace quackml {
 
-const duckdb::LogicalType MatrixType = duckdb::LogicalType::LIST(duckdb::LogicalType::LIST(duckdb::LogicalType::DOUBLE));
-const duckdb::LogicalType LinearRegressionRingType = duckdb::LogicalType::LIST(MatrixType);
+struct LinRegRing {
+    double count;
+    std::vector<double> sums;
+    std::vector<std::vector<double>> covar;
 
-struct LinearRegressionRingElement {
-private:
-    idx_t d;
-    duckdb::Value count;    // scalar
-    duckdb::Value sums;     // column vector 
-    duckdb::Value covar;    // matrix
+    // Constructor from feature observations, used by to_ring
+    LinRegRing(std::vector<duckdb::vector<duckdb::Value>> &observations);
+    // Constructor used in linear_reg_ring
+    // Values loaded from list value
+    LinRegRing(double count, std::vector<double> sums, std::vector<std::vector<double>> covar);
+    // Copy constructor 
+    LinRegRing(const LinRegRing &other);
 
-public:
-    LinearRegressionRingElement();
-    LinearRegressionRingElement(const LinearRegressionRingElement &other);
-    LinearRegressionRingElement(idx_t d, bool additive_identity);
-    LinearRegressionRingElement(duckdb::vector<duckdb::Value> features);
-    LinearRegressionRingElement(duckdb::Value ring);
-    ~LinearRegressionRingElement();
+    // Operators
+    LinRegRing &operator+(const LinRegRing &other);
+    LinRegRing &operator*(const LinRegRing &other);
 
-    // Operands
-    LinearRegressionRingElement operator+(const LinearRegressionRingElement &other);
-    LinearRegressionRingElement operator*(const LinearRegressionRingElement &other);
-
-    idx_t get_d() { return d; }
-    duckdb::Value* get_count() { return &count; }
-    duckdb::Value* get_sums() { return &sums; }
-    duckdb::Value* get_covar() { return &covar; }
-
-    void set_d(idx_t d) { this->d = d; }
-    void set_count(const duckdb::Value &count) { this->count = count; }
-    void set_sums(const duckdb::Value &sums) { this->sums = sums; }
-    void set_covar(const duckdb::Value &covar) { this->covar = covar; }
-
-    // Padding - add rows and columns of 0s to top left or bottom right of covariance matrix
-    void pad_upper(idx_t d_inc);
-    void pad_lower(idx_t d_inc);
-
-    void Print();
+    // Helpers 
+    void padUpper(idx_t inc);
+    void padLower(idx_t inc);
+    void print();
 };
 
 } // namespace quackml
