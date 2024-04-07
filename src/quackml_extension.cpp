@@ -24,138 +24,14 @@
 
 namespace duckdb {
 
-void get_rmse(DuckDB &db, std::string fname) {
-    Connection con(db);
-    con.Query("CREATE TABLE tbl AS SELECT * FROM read_csv_auto('" + fname + "', header=True, delim='\t', columns={'features': 'DOUBLE[]', 'label': 'DOUBLE'});");
-    auto weights = con.Query("SELECT linear_regression(features, label, 0) FROM tbl;")->GetValue(0, 0);
-    std::vector<double> weights_vector;
-    for (auto &child : duckdb::ListValue::GetChildren(weights)) {
-        weights_vector.push_back(child.GetValue<double>());
-    }
-
-    // Get test set features and labels 
-    auto query = con.Query("SELECT * FROM tbl USING SAMPLE 20 PERCENT (bernoulli);");
-    auto features = query->GetValue(0, 0);
-
-    double sum_error = 0;
-    for (idx_t i = 0; i < query->RowCount(); i++) {
-        auto features = query->GetValue(0, i);
-        auto label = query->GetValue(1, i);
-        std::vector<double> feature_vector;
-        for (auto &child : duckdb::ListValue::GetChildren(features)) {
-            feature_vector.push_back(child.GetValue<double>());
-        }
-
-        // Set prediction to bias
-        auto y_prediction = weights_vector[24];
-        // Add weighted pairs 
-        for (idx_t j = 0; j < 24; j++) {
-            y_prediction += weights_vector[j] * feature_vector[j];
-        }
-        // Add squared error 
-        sum_error += pow(label.GetValue<double>() - y_prediction, 2);
-    }
-
-    std::cout << fname << ":\n";
-    std::cout << "Root Mean Squared Error: " << sqrt(sum_error / query->RowCount()) << "\n\n";
-
-    con.Query("DROP TABLE tbl;");
+void test_regression(duckdb::Connection &con) {
+    con.Query("CREATE TABLE test AS SELECT * FROM read_csv('test/quackml/datasets/test_5.tsv', header=TRUE, delim='\t', columns={'features': 'DOUBLE[]', 'labels': 'DOUBLE'});");
+    con.Query("SELECT linear_regression(features, labels, 0) FROM test;")->Print();
+    con.Query("CREATE TABLE r AS SELECT to_ring(features) AS ring FROM test;");
+    con.Query("SELECT linear_regression_ring([ring], 0) FROM r;")->Print();
 }
 
-void test_factorised_comp(DuckDB &db, std::string fname, idx_t n) {
-    Connection con(db);
-    auto lift_duration = 0;
-    auto train_duration = 0;
-
-    // Lift n input relations to ring elements
-    for (idx_t i = 1; i < n+1; i++) {
-        auto relation_fname = fname + std::to_string(i-1) + ".tsv";
-        con.Query("CREATE TABLE tbl_" + std::to_string(i) + " AS SELECT * FROM read_csv_auto('" + relation_fname + "', header=True, delim='\t', columns={'features': 'DOUBLE[]', 'id': 'INTEGER'});");
-        auto start_time = std::chrono::high_resolution_clock::now();
-        con.Query("CREATE TABLE r" + std::to_string(i) + " AS SELECT id, to_ring(features) AS ring FROM tbl_" + std::to_string(i) + " GROUP BY id;");
-        auto end_time = std::chrono::high_resolution_clock::now();
-        lift_duration += std::chrono::duration_cast<std::chrono::microseconds>(end_time - start_time).count();
-    }
-
-    // Train unfactorised linear regression model
-    auto join_query = R"(
-        CREATE TABLE joined AS SELECT 
-        flatten([tbl_1.features[2:5], tbl_2.features, tbl_3.features, tbl_4.features, tbl_5.features, tbl_6.features, tbl_7.features, tbl_8.features, tbl_9.features, tbl_10.features]) AS features,
-        tbl_1.features[1] AS labels
-        FROM tbl_1
-        JOIN tbl_2 ON tbl_1.id = tbl_2.id
-        JOIN tbl_3 ON tbl_1.id = tbl_3.id
-        JOIN tbl_4 ON tbl_1.id = tbl_4.id
-        JOIN tbl_5 ON tbl_1.id = tbl_5.id
-        JOIN tbl_6 ON tbl_1.id = tbl_6.id
-        JOIN tbl_7 ON tbl_1.id = tbl_7.id
-        JOIN tbl_8 ON tbl_1.id = tbl_8.id
-        JOIN tbl_9 ON tbl_1.id = tbl_9.id
-        JOIN tbl_10 ON tbl_1.id = tbl_10.id;
-    )";
-    // std::cout << join_query << "\n";
-    auto join_start_time = std::chrono::high_resolution_clock::now();
-    std::cout << "Join query:\n";
-    con.Query(join_query)->Print();
-    con.Query("SELECT * FROM joined;");
-    auto join_end_time = std::chrono::high_resolution_clock::now();
-    std::cout << "Join duration: " << std::chrono::duration_cast<std::chrono::microseconds>(join_end_time - join_start_time).count() << "micros\n";
-    auto train_start_time = std::chrono::high_resolution_clock::now();
-    auto train_query = R"(
-        SELECT linear_regression(features, labels, 0) 
-        FROM joined;
-    )";
-    con.Query(train_query)->Print();
-    auto train_end_time = std::chrono::high_resolution_clock::now();
-    std::cout << "Train duration: " << std::chrono::duration_cast<std::chrono::microseconds>(train_end_time - train_start_time).count() << "micros\n";
-
-    // Train factorised linear regression model on ring elements
-    std::cout << "Factorised linear regression model:\n";
-    auto factorised_train_start = std::chrono::high_resolution_clock::now();
-    con.Query(R"(
-        SELECT linear_regression_ring([r1.ring, r2.ring, r3.ring, r4.ring, r5.ring, r6.ring, r7.ring, r8.ring, r9.ring, r10.ring], 0) 
-        FROM r1, r2, r3, r4, r5, r6, r7, r8, r9, r10 
-        WHERE r1.id = r2.id 
-        AND r1.id = r3.id 
-        AND r1.id = r4.id
-        AND r1.id = r5.id
-        AND r1.id = r6.id
-        AND r1.id = r7.id
-        AND r1.id = r8.id
-        AND r1.id = r9.id
-        AND r1.id = r10.id
-    )")->Print();
-    auto factorised_train_end = std::chrono::high_resolution_clock::now();
-    train_duration = std::chrono::duration_cast<std::chrono::microseconds>(factorised_train_end - factorised_train_start).count();
-    std::cout << "Lift duration: " << lift_duration << "micros\n";
-    std::cout << "Train duration: " << train_duration << "micros\n\n";
-}
-
-
-void run_quackml_tests(DuckDB &db) {
-    std::cout << "<=========== Running QuackML tests ===========>\n";
-
-    Connection con(db);
-
-    // Accuracy tests 
-    // get_rmse(db, "test/quackml/datasets/test_8.tsv");
-    // get_rmse(db, "test/quackml/datasets/test_9.tsv");
-    // get_rmse(db, "test/quackml/datasets/test_10.tsv");
-    // get_rmse(db, "test/quackml/datasets/test_11.tsv");
-    // get_rmse(db, "test/quackml/datasets/test_12.tsv");
-    // get_rmse(db, "test/quackml/datasets/test_13.tsv");
-    // get_rmse(db, "test/quackml/datasets/test_14.tsv");
-    // get_rmse(db, "test/quackml/datasets/test_15.tsv");
-    // get_rmse(db, "test/quackml/datasets/test_16.tsv");
-    // get_rmse(db, "test/quackml/datasets/test_17.tsv");
-    // get_rmse(db, "test/quackml/datasets/test_18.tsv");
-    // get_rmse(db, "test/quackml/datasets/test_19.tsv");
-    // get_rmse(db, "test/quackml/datasets/test_20.tsv");
-    
-   
-    // auto end_time = std::chrono::high_resolution_clock::now();
-    // std::cout << "Time taken: " << std::chrono::duration_cast<std::chrono::microseconds>(end_time - start_time).count() << "ms\n";
-
+void test_flights(duckdb::Connection &con) {
     // Flight test set
     con.Query("CREATE TABLE airports AS SELECT * FROM read_csv_auto('test/quackml/flights/airports_clean.csv');");
     con.Query("CREATE TABLE flights AS SELECT * FROM read_csv_auto('test/quackml/flights/flights_clean.csv');");
@@ -164,9 +40,6 @@ void run_quackml_tests(DuckDB &db) {
     con.Query("CREATE TABLE airlines AS SELECT * FROM read_csv_auto('test/quackml/flights/airlines_clean.csv');");
 
     // Construct join 
-    // START HERE: There are nulls somewhere in this dataset, remove!!!!
-    // dest_mean_delay contains nulls (7k)
-    // START HERE: Add encoded timezones from airports
     auto join_start_time = std::chrono::high_resolution_clock::now();
     con.Query(R"(
         CREATE TABLE joined AS SELECT 
@@ -230,79 +103,246 @@ void run_quackml_tests(DuckDB &db) {
     }
     std::cout << "Loosely-integrated RMSE: " << sqrt(sum_error / sample_query->RowCount()) << "\n\n";
 
-
     // Factorised model 
     // Create ring elements
     auto lift_start_time = std::chrono::high_resolution_clock::now();
     auto flight_start = std::chrono::high_resolution_clock::now();
     con.Query(R"(
-        CREATE TABLE flight_ring AS
-        SELECT f.origin, f.carrier, to_ring([f.arr_delay_int, f.month, f.day, f.hour, f.minute, f.distance, f.dep_delay_int, f.air_time_int, f.dest_mean_delay, p.engines, p.seats, p.year_int, p.model_mean_delay, p.manufacturer_mean_delay, p.fixed_wing_multi, p.fixed_wing_single, p.rotorcraft, p.turbo_jet, p.turbo_prop, p.turbo_shaft, p.turbo_fan, p.reciprocating, p.four_cycle, w.precip, w.visib, w.temp_double, w.dewp_double, w.humid_double, w.wind_speed_int, w.pressure_double]) ring
-        FROM flights f
-        JOIN planes p ON f.tailnum = p.tailnum
-        JOIN weather w ON f.origin = w.origin AND f.time_hour = w.time_hour
-        GROUP BY f.origin, f.carrier;
-    )");
-    auto flight_end = std::chrono::high_resolution_clock::now();
-    std::cout << "Flight ring duration: " << std::chrono::duration_cast<std::chrono::microseconds>(flight_end - flight_start).count() << "micros\n";
-    auto airport_start = std::chrono::high_resolution_clock::now();
-    con.Query(R"(
-        CREATE TABLE airport_ring AS
-        SELECT faa, to_ring([lat, lon, alt, tz, Asia_Chongqing, Pacific_Honolulu, America_Chicago, NA, America_Los_Angeles, America_Vancouver, America_Anchorage, America_Denver, America_New_York, America_Phoenix]) ring
-        FROM airports GROUP BY faa;
-    )");
-    auto airport_end = std::chrono::high_resolution_clock::now();
-    std::cout << "Airport ring duration: " << std::chrono::duration_cast<std::chrono::microseconds>(airport_end - airport_start).count() << "micros\n";
-    auto airline_start = std::chrono::high_resolution_clock::now();
-    con.Query(R"(
-        CREATE TABLE airline_ring AS
-        SELECT carrier, to_ring([name_mean_delay]) ring
-        FROM airlines GROUP BY carrier;
-    )");
-    auto airline_end = std::chrono::high_resolution_clock::now();
-    std::cout << "Airline ring duration: " << std::chrono::duration_cast<std::chrono::microseconds>(airline_end - airline_start).count() << "micros\n";
-    auto lift_end_time = std::chrono::high_resolution_clock::now();
-    std::cout << "Lift duration: " << std::chrono::duration_cast<std::chrono::microseconds>(lift_end_time - lift_start_time).count() << "micros\n";
-
-    // Train factorised model
-    auto factorised_train_start = std::chrono::high_resolution_clock::now();
-    auto result = con.Query(R"(
         SELECT linear_regression_ring([f.ring, a.ring, l.ring], 0) 
-        FROM flight_ring f, airport_ring a, airline_ring l
-        WHERE f.origin = a.faa 
-        AND f.carrier = l.carrier;
-    )");
+        FROM (
+            SELECT 
+                f.origin, 
+                f.carrier, 
+                to_ring([f.arr_delay_int, f.month, f.day, f.hour, f.minute, f.distance, f.dep_delay_int, f.air_time_int, f.dest_mean_delay, p.engines, p.seats, p.year_int, p.model_mean_delay, p.manufacturer_mean_delay, p.fixed_wing_multi, p.fixed_wing_single, p.rotorcraft, p.turbo_jet, p.turbo_prop, p.turbo_shaft, p.turbo_fan, p.reciprocating, p.four_cycle, w.precip, w.visib, w.temp_double, w.dewp_double, w.humid_double, w.wind_speed_int, w.pressure_double]) AS ring
+            FROM 
+                flights f
+            JOIN 
+                planes p ON f.tailnum = p.tailnum
+            JOIN 
+                weather w ON f.origin = w.origin AND f.time_hour = w.time_hour
+            GROUP BY 
+                f.origin, f.carrier
+        ) AS f,
+        (
+            SELECT 
+                faa, 
+                to_ring([lat, lon, alt, tz, Asia_Chongqing, Pacific_Honolulu, America_Chicago, NA, America_Los_Angeles, America_Vancouver, America_Anchorage, America_Denver, America_New_York, America_Phoenix]) AS ring
+            FROM 
+                airports 
+            GROUP BY 
+                faa
+        ) AS a,
+        (
+            SELECT 
+                carrier, 
+                to_ring([name_mean_delay]) AS ring
+            FROM 
+                airlines 
+            GROUP BY 
+                carrier
+        ) AS l
+        WHERE 
+            f.origin = a.faa 
+            AND f.carrier = l.carrier
+    )")->Print();
     auto factorised_train_end = std::chrono::high_resolution_clock::now();
-    result->Print();
+    std::cout << "Factorised train duration: " << std::chrono::duration_cast<std::chrono::microseconds>(factorised_train_end - flight_start).count() << "micros\n";
     
     // Get RMSE of factorised model
-    auto factorised_weights = result->GetValue(0, 0);
-    std::vector<double> factorised_weights_v;
-    for (auto &child : duckdb::ListValue::GetChildren(factorised_weights)) {
-        factorised_weights_v.push_back(child.GetValue<double>());
-    }
+    // auto factorised_weights = result->GetValue(0, 0);
+    // std::vector<double> factorised_weights_v;
+    // for (auto &child : duckdb::ListValue::GetChildren(factorised_weights)) {
+    //     factorised_weights_v.push_back(child.GetValue<double>());
+    // }
 
-    double factorised_sum_error = 0;
-    for (idx_t i = 0; i < sample_query->RowCount(); i++) {
-        auto features = sample_query->GetValue(0, i);
-        auto label = sample_query->GetValue(1, i);
-        std::vector<double> feature_vector;
-        for (auto &child : duckdb::ListValue::GetChildren(features)) {
-            feature_vector.push_back(child.GetValue<double>());
-        }
+    // double factorised_sum_error = 0;
+    // for (idx_t i = 0; i < sample_query->RowCount(); i++) {
+    //     auto features = sample_query->GetValue(0, i);
+    //     auto label = sample_query->GetValue(1, i);
+    //     std::vector<double> feature_vector;
+    //     for (auto &child : duckdb::ListValue::GetChildren(features)) {
+    //         feature_vector.push_back(child.GetValue<double>());
+    //     }
 
-        auto prediction = 0;
-        // Add weighted pairs 
-        for (idx_t j = 0; j < factorised_weights_v.size(); j++) {
-            prediction += factorised_weights_v[j] * feature_vector[j];
-        }
-        // Add squared error 
-        factorised_sum_error += pow(label.GetValue<double>() - prediction, 2);
-    }
-    std::cout << "Factorised RMSE: " << sqrt(factorised_sum_error / sample_query->RowCount()) << "\n\n";
+    //     auto prediction = 0;
+    //     // Add weighted pairs 
+    //     for (idx_t j = 0; j < factorised_weights_v.size(); j++) {
+    //         prediction += factorised_weights_v[j] * feature_vector[j];
+    //     }
+    //     // Add squared error 
+    //     factorised_sum_error += pow(label.GetValue<double>() - prediction, 2);
+    // }
+    // std::cout << "Factorised RMSE: " << sqrt(factorised_sum_error / sample_query->RowCount()) << "\n\n";
+}
 
-    // Learning over cartesian products 
-    // test_factorised_comp(db, "test/quackml/datasets/factorised_", 10);
+void test_housing(duckdb::Connection &con) {
+    // n=1 factorised model ----------------------------------------------------
+    std::cout << "\nn=1 factorised model\n";
+    // Load datasets 
+    con.Query("CREATE TABLE train AS SELECT * FROM read_csv_auto('test/quackml/home_credit/application_train_clean.csv');");
+    
+    // Training 
+    auto start_time = std::chrono::high_resolution_clock::now();
+    con.Query(R"(
+    SELECT linear_regression_ring([ring], 0) 
+        FROM (
+            SELECT to_ring([
+                TARGET, CNT_CHILDREN, AMT_INCOME_TOTAL, AMT_CREDIT, AMT_ANNUITY, AMT_GOODS_PRICE, REGION_POPULATION_RELATIVE, DAYS_BIRTH, DAYS_EMPLOYED, DAYS_REGISTRATION, DAYS_ID_PUBLISH, OWN_CAR_AGE, FLAG_MOBIL, FLAG_EMP_PHONE, FLAG_WORK_PHONE, FLAG_CONT_MOBILE, FLAG_PHONE, FLAG_EMAIL, CNT_FAM_MEMBERS, REGION_RATING_CLIENT, REGION_RATING_CLIENT_W_CITY, HOUR_APPR_PROCESS_START, REG_REGION_NOT_LIVE_REGION, REG_REGION_NOT_WORK_REGION, LIVE_REGION_NOT_WORK_REGION, REG_CITY_NOT_LIVE_CITY, REG_CITY_NOT_WORK_CITY, LIVE_CITY_NOT_WORK_CITY, EXT_SOURCE_1, EXT_SOURCE_2, EXT_SOURCE_3, APARTMENTS_AVG, BASEMENTAREA_AVG, YEARS_BEGINEXPLUATATION_AVG, YEARS_BUILD_AVG, COMMONAREA_AVG, ELEVATORS_AVG, ENTRANCES_AVG, FLOORSMAX_AVG, FLOORSMIN_AVG, LANDAREA_AVG, LIVINGAPARTMENTS_AVG, LIVINGAREA_AVG, NONLIVINGAPARTMENTS_AVG, NONLIVINGAREA_AVG, APARTMENTS_MODE, BASEMENTAREA_MODE, YEARS_BEGINEXPLUATATION_MODE, YEARS_BUILD_MODE, COMMONAREA_MODE, ELEVATORS_MODE, ENTRANCES_MODE, FLOORSMAX_MODE, FLOORSMIN_MODE, LANDAREA_MODE, LIVINGAPARTMENTS_MODE, LIVINGAREA_MODE, NONLIVINGAPARTMENTS_MODE, NONLIVINGAREA_MODE, APARTMENTS_MEDI, BASEMENTAREA_MEDI, YEARS_BEGINEXPLUATATION_MEDI, YEARS_BUILD_MEDI, COMMONAREA_MEDI, ELEVATORS_MEDI, ENTRANCES_MEDI, FLOORSMAX_MEDI, FLOORSMIN_MEDI, LANDAREA_MEDI, LIVINGAPARTMENTS_MEDI, LIVINGAREA_MEDI, NONLIVINGAPARTMENTS_MEDI, NONLIVINGAREA_MEDI, TOTALAREA_MODE, OBS_30_CNT_SOCIAL_CIRCLE, DEF_30_CNT_SOCIAL_CIRCLE, OBS_60_CNT_SOCIAL_CIRCLE, DEF_60_CNT_SOCIAL_CIRCLE, DAYS_LAST_PHONE_CHANGE, FLAG_DOCUMENT_2, FLAG_DOCUMENT_3, FLAG_DOCUMENT_4, FLAG_DOCUMENT_5, FLAG_DOCUMENT_6, FLAG_DOCUMENT_7, FLAG_DOCUMENT_8, FLAG_DOCUMENT_9, FLAG_DOCUMENT_10, FLAG_DOCUMENT_11, FLAG_DOCUMENT_12, FLAG_DOCUMENT_13, FLAG_DOCUMENT_14, FLAG_DOCUMENT_15, FLAG_DOCUMENT_16, FLAG_DOCUMENT_17, FLAG_DOCUMENT_18, FLAG_DOCUMENT_19, FLAG_DOCUMENT_20, FLAG_DOCUMENT_21, AMT_REQ_CREDIT_BUREAU_HOUR, AMT_REQ_CREDIT_BUREAU_DAY, AMT_REQ_CREDIT_BUREAU_WEEK, AMT_REQ_CREDIT_BUREAU_MON, AMT_REQ_CREDIT_BUREAU_QRT, AMT_REQ_CREDIT_BUREAU_YEAR
+            ]) AS ring 
+            FROM 
+                train
+        ) AS train_ring
+    )")->Print();
+    auto end_time = std::chrono::high_resolution_clock::now();
+    auto duration = std::chrono::duration_cast<std::chrono::microseconds>(end_time - start_time).count();
+    std::cout << "Train time: " << duration << " mms\n";
+
+    // n=1 unfactorised model --------------------------------------------------
+    std::cout << "\nn=1 unfactorised model\n";
+    auto train_start_time = std::chrono::high_resolution_clock::now();
+    con.Query("SELECT linear_regression([CNT_CHILDREN, AMT_INCOME_TOTAL, AMT_CREDIT, AMT_ANNUITY, AMT_GOODS_PRICE, REGION_POPULATION_RELATIVE, DAYS_BIRTH, DAYS_EMPLOYED, DAYS_REGISTRATION, DAYS_ID_PUBLISH, OWN_CAR_AGE, FLAG_MOBIL, FLAG_EMP_PHONE, FLAG_WORK_PHONE, FLAG_CONT_MOBILE, FLAG_PHONE, FLAG_EMAIL, CNT_FAM_MEMBERS, REGION_RATING_CLIENT, REGION_RATING_CLIENT_W_CITY, HOUR_APPR_PROCESS_START, REG_REGION_NOT_LIVE_REGION, REG_REGION_NOT_WORK_REGION, LIVE_REGION_NOT_WORK_REGION, REG_CITY_NOT_LIVE_CITY, REG_CITY_NOT_WORK_CITY, LIVE_CITY_NOT_WORK_CITY, EXT_SOURCE_1, EXT_SOURCE_2, EXT_SOURCE_3, APARTMENTS_AVG, BASEMENTAREA_AVG, YEARS_BEGINEXPLUATATION_AVG, YEARS_BUILD_AVG, COMMONAREA_AVG, ELEVATORS_AVG, ENTRANCES_AVG, FLOORSMAX_AVG, FLOORSMIN_AVG, LANDAREA_AVG, LIVINGAPARTMENTS_AVG, LIVINGAREA_AVG, NONLIVINGAPARTMENTS_AVG, NONLIVINGAREA_AVG, APARTMENTS_MODE, BASEMENTAREA_MODE, YEARS_BEGINEXPLUATATION_MODE, YEARS_BUILD_MODE, COMMONAREA_MODE, ELEVATORS_MODE, ENTRANCES_MODE, FLOORSMAX_MODE, FLOORSMIN_MODE, LANDAREA_MODE, LIVINGAPARTMENTS_MODE, LIVINGAREA_MODE, NONLIVINGAPARTMENTS_MODE, NONLIVINGAREA_MODE, APARTMENTS_MEDI, BASEMENTAREA_MEDI, YEARS_BEGINEXPLUATATION_MEDI, YEARS_BUILD_MEDI, COMMONAREA_MEDI, ELEVATORS_MEDI, ENTRANCES_MEDI, FLOORSMAX_MEDI, FLOORSMIN_MEDI, LANDAREA_MEDI, LIVINGAPARTMENTS_MEDI, LIVINGAREA_MEDI, NONLIVINGAPARTMENTS_MEDI, NONLIVINGAREA_MEDI, TOTALAREA_MODE, OBS_30_CNT_SOCIAL_CIRCLE, DEF_30_CNT_SOCIAL_CIRCLE, OBS_60_CNT_SOCIAL_CIRCLE, DEF_60_CNT_SOCIAL_CIRCLE, DAYS_LAST_PHONE_CHANGE, FLAG_DOCUMENT_2, FLAG_DOCUMENT_3, FLAG_DOCUMENT_4, FLAG_DOCUMENT_5, FLAG_DOCUMENT_6, FLAG_DOCUMENT_7, FLAG_DOCUMENT_8, FLAG_DOCUMENT_9, FLAG_DOCUMENT_10, FLAG_DOCUMENT_11, FLAG_DOCUMENT_12, FLAG_DOCUMENT_13, FLAG_DOCUMENT_14, FLAG_DOCUMENT_15, FLAG_DOCUMENT_16, FLAG_DOCUMENT_17, FLAG_DOCUMENT_18, FLAG_DOCUMENT_19, FLAG_DOCUMENT_20, FLAG_DOCUMENT_21, AMT_REQ_CREDIT_BUREAU_HOUR, AMT_REQ_CREDIT_BUREAU_DAY, AMT_REQ_CREDIT_BUREAU_WEEK, AMT_REQ_CREDIT_BUREAU_MON, AMT_REQ_CREDIT_BUREAU_QRT, AMT_REQ_CREDIT_BUREAU_YEAR], TARGET, 0) FROM train;")->Print();
+    auto train_end_time = std::chrono::high_resolution_clock::now();
+    auto train_duration = std::chrono::duration_cast<std::chrono::microseconds>(train_end_time - train_start_time).count();
+    std::cout << "Train time: " << train_duration << " mms\n";
+
+    // // n=2 factorised model ----------------------------------------------------
+    // Load datasets 
+    std::cout << "\nn=2 factorised model\n";
+    con.Query("CREATE TABLE train AS SELECT * FROM read_csv_auto('test/quackml/home_credit/application_train_clean.csv');");
+    con.Query("CREATE TABLE bureau AS SELECT * FROM read_csv_auto('test/quackml/home_credit/bureau_clean.csv');");
+    con.Query("CREATE TABLE previous AS SELECT * FROM read_csv_auto('test/quackml/home_credit/previous_application_clean.csv');");
+
+    // Train 
+    train_start_time = std::chrono::high_resolution_clock::now();
+    con.Query(R"(
+        SELECT linear_regression_ring(
+            [train_ring.ring, bureau_ring.ring], 0
+        ) 
+        FROM 
+            (SELECT 
+                SK_ID_CURR, 
+                to_ring([TARGET, CNT_CHILDREN, AMT_INCOME_TOTAL, AMT_CREDIT, AMT_ANNUITY, AMT_GOODS_PRICE, REGION_POPULATION_RELATIVE, DAYS_BIRTH, DAYS_EMPLOYED, DAYS_REGISTRATION, DAYS_ID_PUBLISH, OWN_CAR_AGE, FLAG_MOBIL, FLAG_EMP_PHONE, FLAG_WORK_PHONE, FLAG_CONT_MOBILE, FLAG_PHONE, FLAG_EMAIL, CNT_FAM_MEMBERS, REGION_RATING_CLIENT, REGION_RATING_CLIENT_W_CITY, HOUR_APPR_PROCESS_START, REG_REGION_NOT_LIVE_REGION, REG_REGION_NOT_WORK_REGION, LIVE_REGION_NOT_WORK_REGION, REG_CITY_NOT_LIVE_CITY, REG_CITY_NOT_WORK_CITY, LIVE_CITY_NOT_WORK_CITY, EXT_SOURCE_1, EXT_SOURCE_2, EXT_SOURCE_3, APARTMENTS_AVG, BASEMENTAREA_AVG, YEARS_BEGINEXPLUATATION_AVG, YEARS_BUILD_AVG, COMMONAREA_AVG, ELEVATORS_AVG, ENTRANCES_AVG, FLOORSMAX_AVG, FLOORSMIN_AVG, LANDAREA_AVG, LIVINGAPARTMENTS_AVG, LIVINGAREA_AVG, NONLIVINGAPARTMENTS_AVG, NONLIVINGAREA_AVG, APARTMENTS_MODE, BASEMENTAREA_MODE, YEARS_BEGINEXPLUATATION_MODE, YEARS_BUILD_MODE, COMMONAREA_MODE, ELEVATORS_MODE, ENTRANCES_MODE, FLOORSMAX_MODE, FLOORSMIN_MODE, LANDAREA_MODE, LIVINGAPARTMENTS_MODE, LIVINGAREA_MODE, NONLIVINGAPARTMENTS_MODE, NONLIVINGAREA_MODE, APARTMENTS_MEDI, BASEMENTAREA_MEDI, YEARS_BEGINEXPLUATATION_MEDI, YEARS_BUILD_MEDI, COMMONAREA_MEDI, ELEVATORS_MEDI, ENTRANCES_MEDI, FLOORSMAX_MEDI, FLOORSMIN_MEDI, LANDAREA_MEDI, LIVINGAPARTMENTS_MEDI, LIVINGAREA_MEDI, NONLIVINGAPARTMENTS_MEDI, NONLIVINGAREA_MEDI, TOTALAREA_MODE, OBS_30_CNT_SOCIAL_CIRCLE, DEF_30_CNT_SOCIAL_CIRCLE, OBS_60_CNT_SOCIAL_CIRCLE, DEF_60_CNT_SOCIAL_CIRCLE, DAYS_LAST_PHONE_CHANGE, FLAG_DOCUMENT_2, FLAG_DOCUMENT_3, FLAG_DOCUMENT_4, FLAG_DOCUMENT_5, FLAG_DOCUMENT_6, FLAG_DOCUMENT_7, FLAG_DOCUMENT_8, FLAG_DOCUMENT_9, FLAG_DOCUMENT_10, FLAG_DOCUMENT_11, FLAG_DOCUMENT_12, FLAG_DOCUMENT_13, FLAG_DOCUMENT_14, FLAG_DOCUMENT_15, FLAG_DOCUMENT_16, FLAG_DOCUMENT_17, FLAG_DOCUMENT_18, FLAG_DOCUMENT_19, FLAG_DOCUMENT_20, FLAG_DOCUMENT_21, AMT_REQ_CREDIT_BUREAU_HOUR, AMT_REQ_CREDIT_BUREAU_DAY, AMT_REQ_CREDIT_BUREAU_WEEK, AMT_REQ_CREDIT_BUREAU_MON, AMT_REQ_CREDIT_BUREAU_QRT, AMT_REQ_CREDIT_BUREAU_YEAR]) AS ring 
+            FROM 
+                train 
+            GROUP BY 
+                SK_ID_CURR
+            ) AS train_ring,
+            (SELECT 
+                SK_ID_CURR, 
+                to_ring([SK_ID_BUREAU, DAYS_CREDIT, CREDIT_DAY_OVERDUE, DAYS_CREDIT_ENDDATE, DAYS_ENDDATE_FACT, AMT_CREDIT_MAX_OVERDUE, CNT_CREDIT_PROLONG, AMT_CREDIT_SUM, AMT_CREDIT_SUM_DEBT, AMT_CREDIT_SUM_LIMIT, AMT_CREDIT_SUM_OVERDUE, DAYS_CREDIT_UPDATE, AMT_ANNUITY]) AS ring 
+            FROM 
+                bureau 
+            GROUP BY 
+                SK_ID_CURR
+            ) AS bureau_ring
+        WHERE 
+            train_ring.SK_ID_CURR = bureau_ring.SK_ID_CURR;
+    )")->Print();
+    train_end_time = std::chrono::high_resolution_clock::now();
+    train_duration = std::chrono::duration_cast<std::chrono::microseconds>(train_end_time - train_start_time).count();
+    std::cout << "Train time: " << train_duration << " mms\n";
+
+    // n=2 unfactorised model --------------------------------------------------
+    std::cout << "\nn=2 unfactorised model\n";
+    auto join_start_time = std::chrono::high_resolution_clock::now();
+    con.Query(R"(
+        CREATE TABLE joined AS 
+    SELECT 
+        [train.CNT_CHILDREN, train.AMT_INCOME_TOTAL, train.AMT_CREDIT, train.AMT_ANNUITY, train.AMT_GOODS_PRICE, train.REGION_POPULATION_RELATIVE, train.DAYS_BIRTH, train.DAYS_EMPLOYED, train.DAYS_REGISTRATION, train.DAYS_ID_PUBLISH, train.OWN_CAR_AGE, train.FLAG_MOBIL, train.FLAG_EMP_PHONE, train.FLAG_WORK_PHONE, train.FLAG_CONT_MOBILE, train.FLAG_PHONE, train.FLAG_EMAIL, train.CNT_FAM_MEMBERS, train.REGION_RATING_CLIENT, train.REGION_RATING_CLIENT_W_CITY, train.HOUR_APPR_PROCESS_START, train.REG_REGION_NOT_LIVE_REGION, train.REG_REGION_NOT_WORK_REGION, train.LIVE_REGION_NOT_WORK_REGION, train.REG_CITY_NOT_LIVE_CITY, train.REG_CITY_NOT_WORK_CITY, train.LIVE_CITY_NOT_WORK_CITY, train.EXT_SOURCE_1, train.EXT_SOURCE_2, train.EXT_SOURCE_3, train.APARTMENTS_AVG, train.BASEMENTAREA_AVG, train.YEARS_BEGINEXPLUATATION_AVG, train.YEARS_BUILD_AVG, train.COMMONAREA_AVG, train.ELEVATORS_AVG, train.ENTRANCES_AVG, train.FLOORSMAX_AVG, train.FLOORSMIN_AVG, train.LANDAREA_AVG, train.LIVINGAPARTMENTS_AVG, train.LIVINGAREA_AVG, train.NONLIVINGAPARTMENTS_AVG, train.NONLIVINGAREA_AVG, train.APARTMENTS_MODE, train.BASEMENTAREA_MODE, train.YEARS_BEGINEXPLUATATION_MODE, train.YEARS_BUILD_MODE, train.COMMONAREA_MODE, train.ELEVATORS_MODE, train.ENTRANCES_MODE, train.FLOORSMAX_MODE, train.FLOORSMIN_MODE, train.LANDAREA_MODE, train.LIVINGAPARTMENTS_MODE, train.LIVINGAREA_MODE, train.NONLIVINGAPARTMENTS_MODE, train.NONLIVINGAREA_MODE, train.APARTMENTS_MEDI, train.BASEMENTAREA_MEDI, train.YEARS_BEGINEXPLUATATION_MEDI, train.YEARS_BUILD_MEDI, train.COMMONAREA_MEDI, train.ELEVATORS_MEDI, train.ENTRANCES_MEDI, train.FLOORSMAX_MEDI, train.FLOORSMIN_MEDI, train.LANDAREA_MEDI, train.LIVINGAPARTMENTS_MEDI, train.LIVINGAREA_MEDI, train.NONLIVINGAPARTMENTS_MEDI, train.NONLIVINGAREA_MEDI, train.TOTALAREA_MODE, train.OBS_30_CNT_SOCIAL_CIRCLE, train.DEF_30_CNT_SOCIAL_CIRCLE, train.OBS_60_CNT_SOCIAL_CIRCLE, train.DEF_60_CNT_SOCIAL_CIRCLE, train.DAYS_LAST_PHONE_CHANGE, train.FLAG_DOCUMENT_2, train.FLAG_DOCUMENT_3, train.FLAG_DOCUMENT_4, train.FLAG_DOCUMENT_5, train.FLAG_DOCUMENT_6, train.FLAG_DOCUMENT_7, train.FLAG_DOCUMENT_8, train.FLAG_DOCUMENT_9, train.FLAG_DOCUMENT_10, train.FLAG_DOCUMENT_11, train.FLAG_DOCUMENT_12, train.FLAG_DOCUMENT_13, train.FLAG_DOCUMENT_14, train.FLAG_DOCUMENT_15, train.FLAG_DOCUMENT_16, train.FLAG_DOCUMENT_17, train.FLAG_DOCUMENT_18, train.FLAG_DOCUMENT_19, train.FLAG_DOCUMENT_20, train.FLAG_DOCUMENT_21, train.AMT_REQ_CREDIT_BUREAU_HOUR, train.AMT_REQ_CREDIT_BUREAU_DAY, train.AMT_REQ_CREDIT_BUREAU_WEEK, train.AMT_REQ_CREDIT_BUREAU_MON, train.AMT_REQ_CREDIT_BUREAU_QRT, train.AMT_REQ_CREDIT_BUREAU_YEAR, bureau.SK_ID_BUREAU, bureau.DAYS_CREDIT, bureau.CREDIT_DAY_OVERDUE, bureau.DAYS_CREDIT_ENDDATE, bureau.DAYS_ENDDATE_FACT, bureau.AMT_CREDIT_MAX_OVERDUE, bureau.CNT_CREDIT_PROLONG, bureau.AMT_CREDIT_SUM, bureau.AMT_CREDIT_SUM_DEBT, bureau.AMT_CREDIT_SUM_LIMIT, bureau.AMT_CREDIT_SUM_OVERDUE, bureau.DAYS_CREDIT_UPDATE, bureau.AMT_ANNUITY] AS features, 
+        train.TARGET
+    FROM 
+        train 
+    JOIN bureau ON train.SK_ID_CURR = bureau.SK_ID_CURR;)");
+    auto join_end_time = std::chrono::high_resolution_clock::now();
+    auto join_duration = std::chrono::duration_cast<std::chrono::microseconds>(join_end_time - join_start_time).count();
+    std::cout << "Join time: " << join_duration << " mms\n";
+
+    train_start_time = std::chrono::high_resolution_clock::now();
+    con.Query(R"(
+        SELECT linear_regression(features, TARGET, 0)
+        FROM joined;)")->Print();
+    train_end_time = std::chrono::high_resolution_clock::now();
+    train_duration = std::chrono::duration_cast<std::chrono::microseconds>(train_end_time - train_start_time).count();
+    std::cout << "Train time: " << train_duration << " mms\n";
+
+    // n=3 factorised model ----------------------------------------------------
+    std::cout << "\nn=3 factorised model\n";
+
+    // Train 
+    train_start_time = std::chrono::high_resolution_clock::now();
+    con.Query(R"(
+        SELECT 
+            linear_regression_ring([train_ring.ring, bureau_ring.ring, previous_ring.ring], 0) 
+        FROM 
+            (SELECT 
+                SK_ID_CURR, 
+                to_ring([TARGET, CNT_CHILDREN, AMT_INCOME_TOTAL, AMT_CREDIT, AMT_ANNUITY, AMT_GOODS_PRICE, REGION_POPULATION_RELATIVE, DAYS_BIRTH, DAYS_EMPLOYED, DAYS_REGISTRATION, DAYS_ID_PUBLISH, OWN_CAR_AGE, FLAG_MOBIL, FLAG_EMP_PHONE, FLAG_WORK_PHONE, FLAG_CONT_MOBILE, FLAG_PHONE, FLAG_EMAIL, CNT_FAM_MEMBERS, REGION_RATING_CLIENT, REGION_RATING_CLIENT_W_CITY, HOUR_APPR_PROCESS_START, REG_REGION_NOT_LIVE_REGION, REG_REGION_NOT_WORK_REGION, LIVE_REGION_NOT_WORK_REGION, REG_CITY_NOT_LIVE_CITY, REG_CITY_NOT_WORK_CITY, LIVE_CITY_NOT_WORK_CITY, EXT_SOURCE_1, EXT_SOURCE_2, EXT_SOURCE_3, APARTMENTS_AVG, BASEMENTAREA_AVG, YEARS_BEGINEXPLUATATION_AVG, YEARS_BUILD_AVG, COMMONAREA_AVG, ELEVATORS_AVG, ENTRANCES_AVG, FLOORSMAX_AVG, FLOORSMIN_AVG, LANDAREA_AVG, LIVINGAPARTMENTS_AVG, LIVINGAREA_AVG, NONLIVINGAPARTMENTS_AVG, NONLIVINGAREA_AVG, APARTMENTS_MODE, BASEMENTAREA_MODE, YEARS_BEGINEXPLUATATION_MODE, YEARS_BUILD_MODE, COMMONAREA_MODE, ELEVATORS_MODE, ENTRANCES_MODE, FLOORSMAX_MODE, FLOORSMIN_MODE, LANDAREA_MODE, LIVINGAPARTMENTS_MODE, LIVINGAREA_MODE, NONLIVINGAPARTMENTS_MODE, NONLIVINGAREA_MODE, APARTMENTS_MEDI, BASEMENTAREA_MEDI, YEARS_BEGINEXPLUATATION_MEDI, YEARS_BUILD_MEDI, COMMONAREA_MEDI, ELEVATORS_MEDI, ENTRANCES_MEDI, FLOORSMAX_MEDI, FLOORSMIN_MEDI, LANDAREA_MEDI, LIVINGAPARTMENTS_MEDI, LIVINGAREA_MEDI, NONLIVINGAPARTMENTS_MEDI, NONLIVINGAREA_MEDI, TOTALAREA_MODE, OBS_30_CNT_SOCIAL_CIRCLE, DEF_30_CNT_SOCIAL_CIRCLE, OBS_60_CNT_SOCIAL_CIRCLE, DEF_60_CNT_SOCIAL_CIRCLE, DAYS_LAST_PHONE_CHANGE, FLAG_DOCUMENT_2, FLAG_DOCUMENT_3, FLAG_DOCUMENT_4, FLAG_DOCUMENT_5, FLAG_DOCUMENT_6, FLAG_DOCUMENT_7, FLAG_DOCUMENT_8, FLAG_DOCUMENT_9, FLAG_DOCUMENT_10, FLAG_DOCUMENT_11, FLAG_DOCUMENT_12, FLAG_DOCUMENT_13, FLAG_DOCUMENT_14, FLAG_DOCUMENT_15, FLAG_DOCUMENT_16, FLAG_DOCUMENT_17, FLAG_DOCUMENT_18, FLAG_DOCUMENT_19, FLAG_DOCUMENT_20, FLAG_DOCUMENT_21, AMT_REQ_CREDIT_BUREAU_HOUR, AMT_REQ_CREDIT_BUREAU_DAY, AMT_REQ_CREDIT_BUREAU_WEEK, AMT_REQ_CREDIT_BUREAU_MON, AMT_REQ_CREDIT_BUREAU_QRT, AMT_REQ_CREDIT_BUREAU_YEAR]) AS ring 
+            FROM 
+                train 
+            GROUP BY 
+                SK_ID_CURR
+            ) AS train_ring
+        JOIN 
+            (SELECT 
+                SK_ID_CURR, 
+                to_ring([SK_ID_BUREAU, DAYS_CREDIT, CREDIT_DAY_OVERDUE, DAYS_CREDIT_ENDDATE, DAYS_ENDDATE_FACT, AMT_CREDIT_MAX_OVERDUE, CNT_CREDIT_PROLONG, AMT_CREDIT_SUM, AMT_CREDIT_SUM_DEBT, AMT_CREDIT_SUM_LIMIT, AMT_CREDIT_SUM_OVERDUE, DAYS_CREDIT_UPDATE, AMT_ANNUITY]) AS ring 
+            FROM 
+                bureau 
+            GROUP BY 
+                SK_ID_CURR
+            ) AS bureau_ring
+        ON 
+            train_ring.SK_ID_CURR = bureau_ring.SK_ID_CURR
+        JOIN 
+            (SELECT 
+                SK_ID_CURR, 
+                to_ring([SK_ID_PREV, SK_ID_CURR, AMT_ANNUITY, AMT_APPLICATION, AMT_CREDIT, AMT_DOWN_PAYMENT, AMT_GOODS_PRICE, HOUR_APPR_PROCESS_START, NFLAG_LAST_APPL_IN_DAY, RATE_DOWN_PAYMENT, RATE_INTEREST_PRIMARY, RATE_INTEREST_PRIVILEGED, DAYS_DECISION, SELLERPLACE_AREA, CNT_PAYMENT, DAYS_FIRST_DRAWING, DAYS_FIRST_DUE, DAYS_LAST_DUE_1ST_VERSION, DAYS_LAST_DUE, DAYS_TERMINATION, NFLAG_INSURED_ON_APPROVAL]) AS ring 
+            FROM 
+                previous 
+            GROUP BY 
+                SK_ID_CURR
+            ) AS previous_ring
+        ON 
+            train_ring.SK_ID_CURR = previous_ring.SK_ID_CURR;
+    )")->Print();
+    train_end_time = std::chrono::high_resolution_clock::now();
+    train_duration = std::chrono::duration_cast<std::chrono::microseconds>(train_end_time - train_start_time).count();
+    std::cout << "Train time: " << train_duration << " mms\n";
+    
+
+    // n=3 unfactorised model --------------------------------------------------
+    std::cout << "\nn=3 unfactorised model\n";
+    con.Query("CREATE TABLE previous AS SELECT * FROM read_csv_auto('test/quackml/home_credit/previous_application_clean.csv');");
+    join_start_time = std::chrono::high_resolution_clock::now();
+    train_start_time = std::chrono::high_resolution_clock::now();
+    con.Query(R"(
+        SELECT linear_regression(
+            [train.CNT_CHILDREN, train.AMT_INCOME_TOTAL, train.AMT_CREDIT, train.AMT_ANNUITY, train.AMT_GOODS_PRICE, train.REGION_POPULATION_RELATIVE, train.DAYS_BIRTH, train.DAYS_EMPLOYED, train.DAYS_REGISTRATION, train.DAYS_ID_PUBLISH, train.OWN_CAR_AGE, train.FLAG_MOBIL, train.FLAG_EMP_PHONE, train.FLAG_WORK_PHONE, train.FLAG_CONT_MOBILE, train.FLAG_PHONE, train.FLAG_EMAIL, train.CNT_FAM_MEMBERS, train.REGION_RATING_CLIENT, train.REGION_RATING_CLIENT_W_CITY, train.HOUR_APPR_PROCESS_START, train.REG_REGION_NOT_LIVE_REGION, train.REG_REGION_NOT_WORK_REGION, train.LIVE_REGION_NOT_WORK_REGION, train.REG_CITY_NOT_LIVE_CITY, train.REG_CITY_NOT_WORK_CITY, train.LIVE_CITY_NOT_WORK_CITY, train.EXT_SOURCE_1, train.EXT_SOURCE_2, train.EXT_SOURCE_3, train.APARTMENTS_AVG, train.BASEMENTAREA_AVG, train.YEARS_BEGINEXPLUATATION_AVG, train.YEARS_BUILD_AVG, train.COMMONAREA_AVG, train.ELEVATORS_AVG, train.ENTRANCES_AVG, train.FLOORSMAX_AVG, train.FLOORSMIN_AVG, train.LANDAREA_AVG, train.LIVINGAPARTMENTS_AVG, train.LIVINGAREA_AVG, train.NONLIVINGAPARTMENTS_AVG, train.NONLIVINGAREA_AVG, train.APARTMENTS_MODE, train.BASEMENTAREA_MODE, train.YEARS_BEGINEXPLUATATION_MODE, train.YEARS_BUILD_MODE, train.COMMONAREA_MODE, train.ELEVATORS_MODE, train.ENTRANCES_MODE, train.FLOORSMAX_MODE, train.FLOORSMIN_MODE, train.LANDAREA_MODE, train.LIVINGAPARTMENTS_MODE, train.LIVINGAREA_MODE, train.NONLIVINGAPARTMENTS_MODE, train.NONLIVINGAREA_MODE, train.APARTMENTS_MEDI, train.BASEMENTAREA_MEDI, train.YEARS_BEGINEXPLUATATION_MEDI, train.YEARS_BUILD_MEDI, train.COMMONAREA_MEDI, train.ELEVATORS_MEDI, train.ENTRANCES_MEDI, train.FLOORSMAX_MEDI, train.FLOORSMIN_MEDI, train.LANDAREA_MEDI, train.LIVINGAPARTMENTS_MEDI, train.LIVINGAREA_MEDI, train.NONLIVINGAPARTMENTS_MEDI, train.NONLIVINGAREA_MEDI, train.TOTALAREA_MODE, train.OBS_30_CNT_SOCIAL_CIRCLE, train.DEF_30_CNT_SOCIAL_CIRCLE, train.OBS_60_CNT_SOCIAL_CIRCLE, train.DEF_60_CNT_SOCIAL_CIRCLE, train.DAYS_LAST_PHONE_CHANGE, train.FLAG_DOCUMENT_2, train.FLAG_DOCUMENT_3, train.FLAG_DOCUMENT_4, train.FLAG_DOCUMENT_5, train.FLAG_DOCUMENT_6, train.FLAG_DOCUMENT_7, train.FLAG_DOCUMENT_8, train.FLAG_DOCUMENT_9, train.FLAG_DOCUMENT_10, train.FLAG_DOCUMENT_11, train.FLAG_DOCUMENT_12, train.FLAG_DOCUMENT_13, train.FLAG_DOCUMENT_14, train.FLAG_DOCUMENT_15, train.FLAG_DOCUMENT_16, train.FLAG_DOCUMENT_17, train.FLAG_DOCUMENT_18, train.FLAG_DOCUMENT_19, train.FLAG_DOCUMENT_20, train.FLAG_DOCUMENT_21, train.AMT_REQ_CREDIT_BUREAU_HOUR, train.AMT_REQ_CREDIT_BUREAU_DAY, train.AMT_REQ_CREDIT_BUREAU_WEEK, train.AMT_REQ_CREDIT_BUREAU_MON, train.AMT_REQ_CREDIT_BUREAU_QRT, train.AMT_REQ_CREDIT_BUREAU_YEAR, bureau.SK_ID_BUREAU, bureau.DAYS_CREDIT, bureau.CREDIT_DAY_OVERDUE, bureau.DAYS_CREDIT_ENDDATE, bureau.DAYS_ENDDATE_FACT, bureau.AMT_CREDIT_MAX_OVERDUE, bureau.CNT_CREDIT_PROLONG, bureau.AMT_CREDIT_SUM, bureau.AMT_CREDIT_SUM_DEBT, bureau.AMT_CREDIT_SUM_LIMIT, bureau.AMT_CREDIT_SUM_OVERDUE, bureau.DAYS_CREDIT_UPDATE, bureau.AMT_ANNUITY , previous.SK_ID_PREV , previous.SK_ID_CURR , previous.AMT_ANNUITY , previous.AMT_APPLICATION , previous.AMT_CREDIT , previous.AMT_DOWN_PAYMENT , previous.AMT_GOODS_PRICE , previous.HOUR_APPR_PROCESS_START , previous.NFLAG_LAST_APPL_IN_DAY , previous.RATE_DOWN_PAYMENT , previous.RATE_INTEREST_PRIMARY , previous.RATE_INTEREST_PRIVILEGED , previous.DAYS_DECISION , previous.SELLERPLACE_AREA , previous.CNT_PAYMENT , previous.DAYS_FIRST_DRAWING , previous.DAYS_FIRST_DUE , previous.DAYS_LAST_DUE_1ST_VERSION , previous.DAYS_LAST_DUE , previous.DAYS_TERMINATION , previous.NFLAG_INSURED_ON_APPROVAL],
+            train.TARGET,
+            0)
+        FROM
+            train
+        JOIN bureau ON train.SK_ID_CURR = bureau.SK_ID_CURR
+        JOIN previous ON train.SK_ID_CURR = previous.SK_ID_CURR;
+    )")->Print();
+    train_end_time = std::chrono::high_resolution_clock::now();
+    train_duration = std::chrono::duration_cast<std::chrono::microseconds>(train_end_time - train_start_time).count();
+    std::cout << "Train time: " << train_duration << " mms\n";
+
+}
+
+void run_quackml_tests(DuckDB &db) {
+    std::cout << "<=========== Running QuackML tests ===========>\n";
+    Connection con(db);
+
+    // Test regular linear regression 
+    test_regression(con);
+
+    // Housing dataset 
+    test_housing(con);
+
+    // nycflights13 dataset
+    test_flights(con);
 
     std::cout << "<========== QuackML tests complete ==========>\n";
 }
@@ -321,7 +361,7 @@ void QuackmlExtension::Load(DuckDB &db) {
 
     con.Commit();
 
-    //run_quackml_tests(db);
+    // run_quackml_tests(db);
 }
 
 std::string QuackmlExtension::Name() {
